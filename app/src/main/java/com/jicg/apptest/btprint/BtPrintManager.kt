@@ -348,53 +348,111 @@ class BtPrintManager private constructor(private val context: Context) {
      * @param width 宽度 (2-6)
      * @param height 高度 (1-255)
      * @param align 对齐方式
+     * @param barcodeType 条形码类型
      */
     suspend fun printBarCode(
         text: String,
         width: Int = 3,
-        height: Int = 100,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        height: Int = 162,
+        align: Int = PrintCommand.ALIGN_CENTER,
+        barcodeType: BarcodeType = BarcodeType.CODE128
     ) = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "开始打印条形码: $text")
-
-            // 初始化打印机
-//            write(byteArrayOf(PrintCommand.GS, 0x40))
+            if (outputStream == null) {
+                Log.e(TAG, "蓝牙未连接，无法打印条形码")
+                return@withContext
+            }
 
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.GS, 0x61, align.toByte()))
-            Log.d(TAG, "设置对齐方式: $align")
+            write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
 
-            // 设置条形码高度 (1-255)
-            val actualHeight = height.coerceIn(1, 255)
-            write(byteArrayOf(PrintCommand.GS, 0x62, actualHeight.toByte()))
-            Log.d(TAG, "设置条形码高度: $actualHeight")
+            // 转换文本为字节数组（使用ASCII编码）
+            val data = text.toByteArray(Charsets.US_ASCII)
+
+            // 创建命令数组
+            val command = when (barcodeType) {
+                BarcodeType.CODABAR -> {
+                    // Codabar 需要额外的起始和结束字符
+                    ByteArray(data.size + 16)
+                }
+                BarcodeType.CODE128, BarcodeType.ONE_CODE93 -> {
+                    ByteArray(data.size + 14)
+                }
+                else -> {
+                    ByteArray(data.size + 13)
+                }
+            }
 
             // 设置条形码宽度 (2-6)
-            val actualWidth = width.coerceIn(2, 6).toByte()
-            write(byteArrayOf(PrintCommand.GS, 0x77, actualWidth))
-            Log.d(TAG, "设置条形码宽度: $actualWidth")
+            command[0] = 29
+            command[1] = 0x77
+            // CODE39 的宽度需要特殊处理
+            command[2] = when (barcodeType) {
+                BarcodeType.CODE39 -> 2  // CODE39 固定使用宽度 2
+                else -> width.coerceIn(2, 6).toByte()
+            }
 
-            // 设置条形码类型为CODE128
-            write(byteArrayOf(PrintCommand.GS, 0x62, 0x02))
-            Log.d(TAG, "设置条形码类型为CODE128")
+            // 设置条形码高度 (1-255)
+            command[3] = 29
+            command[4] = 0x68
+            command[5] = height.coerceIn(1, 255).toByte()
 
+            // 设置条形码类型
+            command[6] = 29
+            command[7] = 0x48
+            command[8] = barcodeType.level.toByte()
 
-            // 写入条形码数据
-            //02 31 32 33 34 35 36 37 38 39 30 31 32 0A
-            val data = text.toByteArray(Charsets.US_ASCII)//Charsets.US_ASCII
-            write(data)
-            Log.d(TAG, "写入条形码数据: ${text}")
+            // 发送条形码命令
+            command[9] = 29
+            command[10] = 0x6B
+
+            // 根据条形码类型设置命令
+            when (barcodeType) {
+                BarcodeType.CODABAR -> {
+                    command[11] = 0x47
+                    command[12] = (text.length + 2).toByte()
+                    command[13] = 0x41  // 起始字符
+                    System.arraycopy(data, 0, command, 14, data.size)
+                    command[14 + data.size] = 0x41  // 结束字符
+                }
+                BarcodeType.CODE128, BarcodeType.ONE_CODE93 -> {
+                    command[11] = barcodeType.code.toByte()
+                    command[12] = text.length.toByte()
+                    System.arraycopy(data, 0, command, 13, data.size)
+                }
+                else -> {
+                    command[11] = barcodeType.code.toByte()
+                    System.arraycopy(data, 0, command, 12, data.size)
+                }
+            }
+
+            // 写入命令
+            write(command)
 
             // 换行
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
-            Log.d(TAG, "打印条形码完成")
+//            write(byteArrayOf(27, 100, 1.toByte()))
 
+            Log.d(TAG, "打印条形码成功: $text")
         } catch (e: Exception) {
             Log.e(TAG, "打印条形码失败: ${e.message}")
             e.printStackTrace()
             throw e
         }
+    }
+
+    /**
+     * 条形码类型枚举
+     */
+    enum class BarcodeType(val code: Int, val level: Int = 0) {
+        CODE128(0x49),    // Code 128
+        EAN13(0x02),      // EAN-13
+        EAN8(0x03),       // EAN-8
+        UPC_A(0x00),      // UPC-A
+        UPC_E(0x01),      // UPC-E
+        CODE39(0x04, 2),  // Code 39 (level=2)
+        ITF(0x05),        // ITF
+        ONE_CODE93(0x48),    // ONE_CODE93
+        CODABAR(0x06, 2); // Codabar (level=2)
     }
 
     /**

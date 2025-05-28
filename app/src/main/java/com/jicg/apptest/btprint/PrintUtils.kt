@@ -2,6 +2,7 @@ package com.jicg.apptest.btprint
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.jicg.apptest.btprint.BtPrintManager.BarcodeType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -225,9 +226,10 @@ object PrintUtils {
         text: String,
         width: Int=1,
         height: Int=60,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = PrintCommand.ALIGN_CENTER.toInt(),
+        barcodeType: BarcodeType = BarcodeType.CODE128
     ) {
-        btPrintManager?.printBarCode(text, width, height, align)
+        btPrintManager?.printBarCode(text, width, height, align,barcodeType)
     }
 
     /**

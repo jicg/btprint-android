@@ -40,6 +40,17 @@ object PrintCommand {
     const val BARCODE_WIDTH: Byte = 0x77
     const val BARCODE_TYPE: Byte = 0x6B
     const val BARCODE_CODE128: Byte = 0x49
+
+
+    const val ONE_CODE93: Byte = 72
+    const val ONE_JAN13: Byte = 2
+    const val ONE_CODE128: Byte = 73
+    const val ONE_JAN8: Byte = 3
+    const val ONE_CODABAR: Byte = 6
+
+    const val TWO_PDF417: Byte = 100
+    const val TWO_DATAMATRIX: Byte = 101
+    const val TWO_QRCODE: Byte = 102
     
     // 二维码命令
     const val QR_SIZE: Byte = 0x43

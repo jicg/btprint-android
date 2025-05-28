@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.jicg.apptest.btprint.BtPrintActivity
+import com.jicg.apptest.btprint.BtPrintManager
 import com.jicg.apptest.btprint.PrintCommand
 import com.jicg.apptest.btprint.PrintUtils
 import kotlinx.coroutines.launch
@@ -25,20 +26,22 @@ class MainActivity : ComponentActivity() {
     private lateinit var imagePreview: ImageView
     private var currentBitmap: Bitmap? = null
 
-    private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.data?.let { uri ->
-                try {
-                    // 从相册加载图片
-                    currentBitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
-                    imagePreview.setImageBitmap(currentBitmap)
-                    Toast.makeText(this, "图片加载成功", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this, "加载图片失败: ${e.message}", Toast.LENGTH_SHORT).show()
+    private val selectImageLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                result.data?.data?.let { uri ->
+                    try {
+                        // 从相册加载图片
+                        currentBitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                        imagePreview.setImageBitmap(currentBitmap)
+                        Toast.makeText(this, "图片加载成功", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "加载图片失败: ${e.message}", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 }
             }
         }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,7 +51,8 @@ class MainActivity : ComponentActivity() {
         // 尝试自动连接上次的设备
         lifecycleScope.launch {
             if (PrintUtils.autoConnectLastDevice()) {
-                Toast.makeText(this@MainActivity, "已自动连接上次的打印机", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "已自动连接上次的打印机", Toast.LENGTH_SHORT)
+                    .show()
                 updateButtonState()
             }
         }
@@ -79,19 +83,66 @@ class MainActivity : ComponentActivity() {
             text = "打印测试"
             setOnClickListener {
                 if (PrintUtils.isConnected()) {
+
                     lifecycleScope.launch {
                         try {
                             // 打印图片
                             currentBitmap?.let { bitmap ->
-                                PrintUtils.printImageWait(bitmap, 300, 300, PrintCommand.ALIGN_CENTER)
-                                Toast.makeText(this@MainActivity, "打印测试完成", Toast.LENGTH_SHORT).show()
+
+
+                                PrintUtils.printQrCodeWait(
+                                    "1234567890", 200, 1
+                                )
+//                                PrintUtils.printBarCodeWait("1234567", 3, 60, PrintCommand.ALIGN_CENTER,
+//                                    BtPrintManager.BarcodeType.CODE128
+//                                )
+//                                PrintUtils.printText("CODE128")
+
+//                                PrintUtils.printBarCodeWait("1234567890", 3, 60, PrintCommand.ALIGN_CENTER,
+//                                    BtPrintManager.BarcodeType.CODE128
+//                                )
+//
+//
+//                                PrintUtils.printBarCodeWait("1234567", 3, 60, PrintCommand.ALIGN_CENTER,
+//                                    BtPrintManager.BarcodeType.CODABAR
+//                                )
+//                                PrintUtils.printText("CODABAR")
+
+
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "打印测试完成",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             } ?: run {
-                                Toast.makeText(this@MainActivity, "请先选择图片", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "请先选择图片",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         } catch (e: Exception) {
-                            Toast.makeText(this@MainActivity, "打印测试失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "打印测试失败: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
+
+//                    lifecycleScope.launch {
+//                        try {
+//                            // 打印图片
+//                            currentBitmap?.let { bitmap ->
+//                                PrintUtils.printImageWait(bitmap, 300, 300, PrintCommand.ALIGN_CENTER)
+//                                Toast.makeText(this@MainActivity, "打印测试完成", Toast.LENGTH_SHORT).show()
+//                            } ?: run {
+//                                Toast.makeText(this@MainActivity, "请先选择图片", Toast.LENGTH_SHORT).show()
+//                            }
+//                        } catch (e: Exception) {
+//                            Toast.makeText(this@MainActivity, "打印测试失败: ${e.message}", Toast.LENGTH_SHORT).show()
+//                        }
+//                    }
                 } else {
                     Toast.makeText(this@MainActivity, "请先连接打印机", Toast.LENGTH_SHORT).show()
                 }
@@ -118,7 +169,8 @@ class MainActivity : ComponentActivity() {
             text = "从相册选择图片"
             setOnClickListener {
                 // 打开相册选择图片
-                val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                val intent =
+                    Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                 selectImageLauncher.launch(intent)
             }
         }.also { rootLayout.addView(it) }
@@ -145,7 +197,11 @@ class MainActivity : ComponentActivity() {
                 val intent = Intent(this@MainActivity, BtPrintActivity::class.java)
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "启动打印界面失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@MainActivity,
+                    "启动打印界面失败: ${e.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
