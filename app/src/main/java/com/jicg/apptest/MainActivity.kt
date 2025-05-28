@@ -89,10 +89,8 @@ class MainActivity : ComponentActivity() {
                             // 打印图片
                             currentBitmap?.let { bitmap ->
 
-
-                                PrintUtils.printQrCodeWait(
-                                    "1234567890", 200, 1
-                                )
+                                PrintUtils.printImage(bitmap,width=300)
+//                                PrintUtils.printQrCodeWait("1234567890")
 //                                PrintUtils.printBarCodeWait("1234567", 3, 60, PrintCommand.ALIGN_CENTER,
 //                                    BtPrintManager.BarcodeType.CODE128
 //                                )
