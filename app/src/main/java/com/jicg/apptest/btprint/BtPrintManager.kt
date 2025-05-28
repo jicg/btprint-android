@@ -284,61 +284,61 @@ class BtPrintManager private constructor(private val context: Context) {
     /**
      * 打印二维码
      * @param text 二维码内容
-     * @param width 宽度
+     * @param width 宽度 (1-16)
+     * @param height 高度 (1-16)
      * @param align 对齐方式
      */
-    suspend fun printQrCode(text: String, width: Int, align: Int) = withContext(Dispatchers.IO) {
+    suspend fun printQrCode(
+        text: String,
+        width: Int = 4,
+        height: Int = 4,
+        align: Int = PrintCommand.ALIGN_CENTER
+    ) = withContext(Dispatchers.IO) {
         try {
             if (outputStream == null) {
                 Log.e(TAG, "蓝牙未连接，无法打印二维码")
                 return@withContext
             }
-            // 先打印空行，避免顶部出现多余字符
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
-            // 清空缓冲区
-            write(byteArrayOf(PrintCommand.ESC, 0x40))
+
             // 设置对齐方式
             write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
 
-            // 设置二维码大小 (1-16)
-            val size = when (width) {
-                in 0..100 -> 4
-                in 101..200 -> 6
-                else -> 8
-            }
-            write(byteArrayOf(PrintCommand.GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, size.toByte()))
+            // 转换文本为字节数组
+            val data = text.toByteArray(Charsets.US_ASCII)
+            val dataLength = data.size
 
-            // 设置二维码纠错级别 (L:0, M:1, Q:2, H:3)
-            write(byteArrayOf(PrintCommand.GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x03))
+            // 设置二维码参数
+            // 设置二维码大小
+            write(byteArrayOf(29, 40, 107, 3, 0, 49, 67, width.coerceIn(1, 16).toByte()))
+            // 设置二维码高度
+            write(byteArrayOf(29, 40, 107, 3, 0, 49, 69, height.coerceIn(1, 16).toByte()))
 
-            // 设置打印浓度 (0-255)
-            write(byteArrayOf(PrintCommand.GS, 0x28, 0x4B, 0x02, 0x00, 0x4D, 0x40))
+            // 创建二维码数据命令
+            val command = ByteArray(dataLength + 8)
+            command[0] = 29  // GS
+            command[1] = 40  // (
+            command[2] = 107 // k
+            command[3] = (dataLength % 256 + 3).toByte()
+            command[4] = (dataLength / 256).toByte()
+            command[5] = 49  // 1
+            command[6] = 80  // P
+            command[7] = 48  // 0
+            System.arraycopy(data, 0, command, 8, dataLength)
 
             // 写入二维码数据
-            val data = text.toByteArray()
-            val length = data.size + 3
-            write(
-                byteArrayOf(
-                    PrintCommand.GS,
-                    0x28,
-                    0x6B,
-                    (length and 0xFF).toByte(),
-                    ((length shr 8) and 0xFF).toByte(),
-                    0x31,
-                    0x50,
-                    0x30
-                )
-            )
-            write(data)
+            write(command)
 
             // 打印二维码
-            write(byteArrayOf(PrintCommand.GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30))
+            write(byteArrayOf(29, 40, 107, 3, 0, 49, 81, 48))
 
             // 换行
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
-            Log.d(TAG, "打印二维码成功 $text")
+            write(byteArrayOf(27, 100, 1))
+
+            Log.d(TAG, "打印二维码成功: $text")
         } catch (e: Exception) {
-            Log.e(TAG, "打印二维码失败", e)
+            Log.e(TAG, "打印二维码失败: ${e.message}")
+            e.printStackTrace()
+            throw e
         }
     }
 
