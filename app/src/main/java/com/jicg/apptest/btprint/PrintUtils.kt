@@ -3,6 +3,11 @@ package com.jicg.apptest.btprint
 import android.content.Context
 import android.graphics.Bitmap
 import com.jicg.apptest.btprint.BtPrintManager.BarcodeType
+import com.jicg.apptest.btprint.BtPrintManager.Companion.ALIGN_CENTER
+import com.jicg.apptest.btprint.BtPrintManager.Companion.ALIGN_LEFT
+import com.jicg.apptest.btprint.BtPrintManager.Companion.FONT_SIZE_LARGE
+import com.jicg.apptest.btprint.BtPrintManager.Companion.FONT_SIZE_NORMAL
+import com.jicg.apptest.btprint.BtPrintManager.Companion.FONT_SIZE_SMALL
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,8 +36,8 @@ object PrintUtils {
      */
     fun printText(
         text: String,
-        fontSize: Int = PrintCommand.FONT_NORMAL.toInt(),
-        align: Int = PrintCommand.ALIGN_LEFT.toInt()
+        fontSize: Int = FONT_SIZE_NORMAL.toInt(),
+        align: Int = ALIGN_LEFT.toInt()
     ) {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printText(text, fontSize, align)
@@ -62,7 +67,7 @@ object PrintUtils {
         text1: String,
         text2: String,
         text3: String,
-        fontSize: Int = PrintCommand.FONT_NORMAL.toInt()
+        fontSize: Int = FONT_SIZE_NORMAL
     ) {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printThree(text1, text2, text3, fontSize)
@@ -75,7 +80,7 @@ object PrintUtils {
      * @param width 宽度 (1-3)
      * @param align 对齐方式
      */
-    fun printQrCode(text: String, width: Int = 2, align: Int = PrintCommand.ALIGN_CENTER.toInt()) {
+    fun printQrCode(text: String, width: Int = 2, align: Int = ALIGN_CENTER.toInt()) {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printQrCode(text, width, align)
         }
@@ -92,7 +97,7 @@ object PrintUtils {
         text: String,
         width: Int = 3,
         height: Int = 80,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = ALIGN_CENTER.toInt()
     ) {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printBarCode(text, width, height, align)
@@ -110,7 +115,7 @@ object PrintUtils {
         bitmap: Bitmap,
         width: Int = 200,
         height: Int = 200,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = ALIGN_CENTER.toInt()
     ) {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printImage(bitmap, width, height, align)
@@ -126,8 +131,8 @@ object PrintUtils {
             repeat(lines) {
                 btPrintManager?.printText(
                     "",
-                    PrintCommand.FONT_NORMAL.toInt(),
-                    PrintCommand.ALIGN_CENTER.toInt()
+                    FONT_SIZE_NORMAL,
+                    ALIGN_CENTER.toInt()
                 )
             }
         }
@@ -142,8 +147,8 @@ object PrintUtils {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printText(
                 char.repeat(length),
-                PrintCommand.FONT_NORMAL.toInt(),
-                PrintCommand.ALIGN_CENTER.toInt()
+                FONT_SIZE_NORMAL,
+                ALIGN_CENTER.toInt()
             )
         }
     }
@@ -156,8 +161,8 @@ object PrintUtils {
         CoroutineScope(Dispatchers.Main).launch {
             btPrintManager?.printText(
                 title,
-                PrintCommand.FONT_DOUBLE_HEIGHT.toInt(),
-                PrintCommand.ALIGN_CENTER.toInt()
+                FONT_SIZE_LARGE.toInt(),
+                ALIGN_CENTER.toInt()
             )
             printDivider()
         }
@@ -179,12 +184,26 @@ object PrintUtils {
     }
 
     /**
+     * 打印标题
+     * @param title 标题文本
+     */
+    suspend fun printTitleWait(title: String) {
+        btPrintManager?.setFont(2, 2, 1, 0)
+        btPrintManager?.printText(
+            title,
+            FONT_SIZE_LARGE,
+            ALIGN_CENTER
+        )
+        printDivider()
+    }
+
+    /**
      * 打印文本（挂起版）
      */
     suspend fun printTextWait(
         text: String,
-        fontSize: Int = PrintCommand.FONT_NORMAL.toInt(),
-        align: Int = PrintCommand.ALIGN_LEFT.toInt()
+        fontSize: Int = FONT_SIZE_NORMAL.toInt(),
+        align: Int = ALIGN_LEFT.toInt()
     ) {
         btPrintManager?.printText(text, fontSize, align)
     }
@@ -203,7 +222,7 @@ object PrintUtils {
         text1: String,
         text2: String,
         text3: String,
-        fontSize: Int = PrintCommand.FONT_NORMAL.toInt()
+        fontSize: Int = FONT_SIZE_NORMAL
     ) {
         btPrintManager?.printThree(text1, text2, text3, fontSize)
     }
@@ -214,7 +233,7 @@ object PrintUtils {
     suspend fun printQrCodeWait(
         text: String,
         width: Int = 2,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = ALIGN_CENTER.toInt()
     ) {
         btPrintManager?.printQrCode(text, width, align)
     }
@@ -224,12 +243,12 @@ object PrintUtils {
      */
     suspend fun printBarCodeWait(
         text: String,
-        width: Int=1,
-        height: Int=60,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt(),
+        width: Int = 1,
+        height: Int = 60,
+        align: Int = ALIGN_CENTER.toInt(),
         barcodeType: BarcodeType = BarcodeType.CODE128
     ) {
-        btPrintManager?.printBarCode(text, width, height, align,barcodeType)
+        btPrintManager?.printBarCode(text, width, height, align, barcodeType)
     }
 
     /**
@@ -239,7 +258,7 @@ object PrintUtils {
         bitmap: Bitmap,
         width: Int = 200,
         height: Int = 200,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = ALIGN_CENTER.toInt()
     ) {
         btPrintManager?.printImage(bitmap, width, height, align)
     }
@@ -252,8 +271,8 @@ object PrintUtils {
     suspend fun printDividerWait(char: String = "-", length: Int = 32) {
         btPrintManager?.printText(
             char.repeat(length),
-            PrintCommand.FONT_NORMAL.toInt(),
-            PrintCommand.ALIGN_CENTER.toInt()
+            FONT_SIZE_NORMAL,
+            ALIGN_CENTER.toInt()
         )
     }
 
@@ -265,8 +284,8 @@ object PrintUtils {
         repeat(lines) {
             btPrintManager?.printText(
                 "",
-                PrintCommand.FONT_NORMAL.toInt(),
-                PrintCommand.ALIGN_CENTER.toInt()
+                FONT_SIZE_NORMAL,
+                ALIGN_CENTER.toInt()
             )
         }
     }

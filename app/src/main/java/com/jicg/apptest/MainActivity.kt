@@ -16,7 +16,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.jicg.apptest.btprint.BtPrintActivity
 import com.jicg.apptest.btprint.BtPrintManager
-import com.jicg.apptest.btprint.PrintCommand
 import com.jicg.apptest.btprint.PrintUtils
 import kotlinx.coroutines.launch
 
@@ -86,10 +85,36 @@ class MainActivity : ComponentActivity() {
 
                     lifecycleScope.launch {
                         try {
+                            PrintUtils.printTitleWait("测试")
+
+                            PrintUtils.printTwoWait("店仓：","测试店仓")
+                            PrintUtils.printTwoWait("员工：","黎明")
+                            PrintUtils.printTwoWait("时间：","2024-01-01 12:00:00")
+                            PrintUtils.printTwoWait("店仓：","测试店仓")
+                            PrintUtils.printTwoWait("VIP卡号","xxxxxxxxx")
+                            PrintUtils.printDividerWait("=")
+                            PrintUtils.printThreeWait("商品","1","800.0")
+                            PrintUtils.printDividerWait("-")
+                            PrintUtils.printThreeWait("小王aaa","2","200")
+                            PrintUtils.printDividerWait("-")
+                            PrintUtils.printThreeWait("小王111","33","20")
+                            PrintUtils.printDividerWait("-")
+                            PrintUtils.printThreeWait("小王bbb","45","40")
+                            PrintUtils.printDividerWait("=")
+                            PrintUtils.printTwoWait("合计","1111.0")
+                            PrintUtils.printTextWait("")
+                            PrintUtils.printBarCodeWait("12312312312312")
+                            PrintUtils.printTextWait("")
+                            PrintUtils.printTextWait(
+                                "测试撒测测试测试测试测试撒测测试测试测试测试撒测\n测试测、试测试测试撒测测试测试。测试测试撒测测试测试测试",
+                                fontSize =0)
+                            PrintUtils.printTextWait("")
+                            PrintUtils.printTextWait("")
+                            PrintUtils.printTextWait("")
                             // 打印图片
                             currentBitmap?.let { bitmap ->
 
-                                PrintUtils.printImage(bitmap,width=300)
+//                                PrintUtils.printImage(bitmap,width=300)
 //                                PrintUtils.printQrCodeWait("1234567890")
 //                                PrintUtils.printBarCodeWait("1234567", 3, 60, PrintCommand.ALIGN_CENTER,
 //                                    BtPrintManager.BarcodeType.CODE128
@@ -120,6 +145,7 @@ class MainActivity : ComponentActivity() {
                                 ).show()
                             }
                         } catch (e: Exception) {
+                            e.printStackTrace()
                             Toast.makeText(
                                 this@MainActivity,
                                 "打印测试失败: ${e.message}",

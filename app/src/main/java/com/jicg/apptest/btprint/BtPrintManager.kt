@@ -14,6 +14,7 @@ import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.Charset
 import java.util.*
+import kotlin.experimental.or
 
 /**
  * 蓝牙打印管理器
@@ -35,6 +36,16 @@ class BtPrintManager private constructor(private val context: Context) {
         const val FONT_SIZE_SMALL = 0    // 小字体
         const val FONT_SIZE_NORMAL = 1   // 正常字体
         const val FONT_SIZE_LARGE = 2    // 大字体
+
+        const val ALIGN_LEFT: Int = 0x00
+        const val ALIGN_CENTER: Int = 0x01
+        const val ALIGN_RIGHT: Int = 0x02
+
+        const val ESC: Byte = 0x1B
+        const val GS: Byte = 0x1D
+        
+        val CHARSET_GBK = Charset.forName("GBK")
+        val FEED_LINE:Int = 0x0A
 
         @Synchronized
         fun getInstance(context: Context): BtPrintManager {
@@ -112,6 +123,43 @@ class BtPrintManager private constructor(private val context: Context) {
     }
 
     /**
+     * 设置字体
+     * @param width 宽度 (0-7)
+     * @param height 高度 (0-7)
+     * @param bold 粗体 (0-1)
+     * @param underline 下划线 (0-1)
+     * @return 0:成功, 1:宽度参数错误, 2:高度参数错误, 3:粗体参数错误, 4:下划线参数错误
+     */
+    suspend fun setFont(width: Int, height: Int, bold: Int, underline: Int): Int = withContext(Dispatchers.IO) {
+        try {
+            // 参数检查
+            if (width !in 0..7) return@withContext 1
+            if (height !in 0..7) return@withContext 2
+            if (bold !in 0..1) return@withContext 3
+            if (underline !in 0..1) return@withContext 4
+
+            // 设置字体样式（粗体和下划线）
+            var style = 0
+            style = style or (bold shl 3)
+            style = style or (underline shl 7)
+            write(byteArrayOf(27, 33, style.toByte()))
+
+            // 设置字体大小（宽度和高度）
+            var size = 0
+            size = size or (width shl 4)
+            size = size or height
+            write(byteArrayOf(29, 33, size.toByte()))
+
+            Log.d(TAG, "设置字体成功: width=$width, height=$height, bold=$bold, underline=$underline")
+            return@withContext 0
+        } catch (e: Exception) {
+            Log.e(TAG, "设置字体失败: ${e.message}")
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    /**
      * 打印文本
      * @param text 文本内容
      * @param fontSize 字体大小 (0:小字体, 1:正常字体, 2:大字体)
@@ -121,13 +169,13 @@ class BtPrintManager private constructor(private val context: Context) {
     suspend fun printText(
         text: String,
         fontSize: Int = FONT_SIZE_NORMAL,
-        align: Int = PrintCommand.ALIGN_LEFT,
+        align: Int = ALIGN_LEFT,
         feedLines: Int = 1
     ) = withContext(Dispatchers.IO) {
         require(
             align in setOf(
-                PrintCommand.ALIGN_LEFT,
-                PrintCommand.ALIGN_CENTER, PrintCommand.ALIGN_RIGHT
+                ALIGN_LEFT,
+                ALIGN_CENTER, ALIGN_RIGHT
             )
         )
         {
@@ -140,32 +188,32 @@ class BtPrintManager private constructor(private val context: Context) {
         try {
             // 合并多次写入以提高性能
             val outputBuffer = ByteArrayOutputStream().apply {
-                write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
+                write(byteArrayOf(ESC, 0x61, align.toByte()))
                 // 设置字体大小
                 when (fontSize) {
                     FONT_SIZE_SMALL -> {
                         // 小字体
-                        write(byteArrayOf(PrintCommand.ESC, 0x21, 0x01)) // 小字体
-                        write(byteArrayOf(PrintCommand.ESC, 0x4D, 0))
+                        write(byteArrayOf(ESC, 0x21, 0x01)) // 小字体
+                        write(byteArrayOf(ESC, 0x4D, 0))
                     }
 
                     FONT_SIZE_NORMAL -> {
                         // 正常字体
-                        write(byteArrayOf(PrintCommand.ESC, 0x21, 0x00)) // 正常大小
-                        write(byteArrayOf(PrintCommand.ESC, 0x4D, 0))
+                        write(byteArrayOf(ESC, 0x21, 0x00)) // 正常大小
+                        write(byteArrayOf(ESC, 0x4D, 0))
                     }
 
                     FONT_SIZE_LARGE -> {
                         // 大字体
-                        write(byteArrayOf(PrintCommand.ESC, 0x21, 0x10)) // 大字体
-                        write(byteArrayOf(PrintCommand.ESC, 0x4D, 0))
+                        write(byteArrayOf(ESC, 0x21, 0x33)) // 大字体
+                        write(byteArrayOf(ESC, 0x4D, 0))
                     }
                 }
 
                 // 写入文本（提取GBK编码为常量）
-                write(text.toByteArray(PrintCommand.CHARSET_GBK))
+                write(text.toByteArray(CHARSET_GBK))
 
-                // 换行（支持多行）
+//                // 换行（支持多行）
                 repeat(feedLines) {
                     write(0x0A) // 使用换行符
                 }
@@ -190,8 +238,8 @@ class BtPrintManager private constructor(private val context: Context) {
     suspend fun printTwo(text1: String, text2: String) = withContext(Dispatchers.IO) {
         try {
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.ESC, 0x61, 1.toByte()))
-            write(byteArrayOf(PrintCommand.ESC, 0x4D, 0))
+            write(byteArrayOf(ESC, 0x61, 1.toByte()))
+            write(byteArrayOf(ESC, 0x4D, 0))
             // 计算实际字符宽度（考虑中文字符）
             val getCharWidth = { str: String ->
                 str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
@@ -209,7 +257,7 @@ class BtPrintManager private constructor(private val context: Context) {
             // 打印文本（使用GBK编码）
             write("$text1$spaces$text2".toByteArray(Charset.forName("GBK")))
             // 换行
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
+            write(byteArrayOf(FEED_LINE.toByte()))
         } catch (e: IOException) {
             Log.e(TAG, "打印两列文本失败", e)
         }
@@ -226,35 +274,59 @@ class BtPrintManager private constructor(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 // 设置字体大小
-                write(byteArrayOf(PrintCommand.ESC, 0x45, fontSize.toByte()))
+                write(byteArrayOf(ESC, 0x45, fontSize.toByte()))
 
                 // 计算实际字符宽度（考虑中文字符）
-                val getCharWidth = { str: String ->
+                val getStringPixLength = { str: String ->
                     str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
                 }
 
-                // 计算每列宽度（假设打印机每行32个字符）
-                val totalWidth = 32
-                val columnWidth = totalWidth / 3
+                // 打印机参数
+                val WIDTH_PIXEL = 32  // 打印机总宽度
+                val WIDTH_PIXEL_MID = 16  // 中间区域宽度
+                val SpaceLength = 1  // 空格宽度
 
-                // 计算每列文本的实际宽度
-                val text1Width = getCharWidth(text1)
-                val text2Width = getCharWidth(text2)
-                val text3Width = getCharWidth(text3)
+                // 计算各列文本宽度
+                val leftLength = getStringPixLength(text1)
+                val middleLength = getStringPixLength(text2)
+                val rightLength = getStringPixLength(text3)
 
-                // 计算每列需要的空格数
-                val space1 = " ".repeat(columnWidth - text1Width)
-                val space2 = " ".repeat(columnWidth - text2Width)
+                // 计算剩余空间
+                var remLength = WIDTH_PIXEL - rightLength - leftLength - middleLength
+                var result = text1
 
-                // 组合文本
-                val formattedText = "$text1$space1$text2$space2$text3"
+                // 如果空间不足，左列换行
+                if (remLength < 0) {
+                    result += "\n"
+                    remLength = WIDTH_PIXEL - middleLength - rightLength
+                }
+
+                // 计算空格数量
+                val size = remLength / SpaceLength
+                val WIDTH_PIXEL_MID_RIGHT = WIDTH_PIXEL - WIDTH_PIXEL_MID
+
+                // 根据左列长度决定空格分配方式
+                if (leftLength < WIDTH_PIXEL_MID && WIDTH_PIXEL_MID_RIGHT > (SpaceLength * 2 + middleLength / 2 + rightLength)) {
+                    // 左列较短时的空格分配
+                    val leftSize = (WIDTH_PIXEL_MID - leftLength - middleLength / 2) / SpaceLength
+                    val rightSize = size - leftSize
+                    result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
+                } else {
+                    // 常规空格分配
+                    val leftSize = size * (WIDTH_PIXEL_MID / WIDTH_PIXEL)
+                    val rightSize = size - leftSize
+                    result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
+                }
 
                 // 打印文本（使用GBK编码）
-                write(formattedText.toByteArray(Charset.forName("GBK")))
+                write(result.toByteArray(Charset.forName("GBK")))
                 // 换行
-                write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
-            } catch (e: IOException) {
-                Log.e(TAG, "打印三列文本失败", e)
+                write(byteArrayOf(FEED_LINE.toByte()))
+                Log.d(TAG, "打印三列文本成功: $text1 | $text2 | $text3")
+            } catch (e: Exception) {
+                Log.e(TAG, "打印三列文本失败: ${e.message}")
+                e.printStackTrace()
+                throw e
             }
         }
 
@@ -266,7 +338,7 @@ class BtPrintManager private constructor(private val context: Context) {
     suspend fun printDivider(char: String = "-", length: Int = 32) = withContext(Dispatchers.IO) {
         try {
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.ESC, 0x61, PrintCommand.ALIGN_CENTER.toByte()))
+            write(byteArrayOf(ESC, 0x61, ALIGN_CENTER.toByte()))
 
             // 计算实际字符宽度（考虑中文字符）
             val charWidth = if (char[0].code > 127) 2 else 1
@@ -275,7 +347,7 @@ class BtPrintManager private constructor(private val context: Context) {
             // 打印分割线
             write(char.repeat(actualLength).toByteArray(Charset.forName("GBK")))
             // 换行
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
+            write(byteArrayOf(FEED_LINE.toByte()))
         } catch (e: IOException) {
             Log.e(TAG, "打印分割线失败", e)
         }
@@ -292,7 +364,7 @@ class BtPrintManager private constructor(private val context: Context) {
         text: String,
         width: Int = 4,
         height: Int = 4,
-        align: Int = PrintCommand.ALIGN_CENTER
+        align: Int = ALIGN_CENTER
     ) = withContext(Dispatchers.IO) {
         try {
             if (outputStream == null) {
@@ -301,7 +373,7 @@ class BtPrintManager private constructor(private val context: Context) {
             }
 
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
+            write(byteArrayOf(ESC, 0x61, align.toByte()))
 
             // 转换文本为字节数组
             val data = text.toByteArray(Charsets.US_ASCII)
@@ -354,7 +426,7 @@ class BtPrintManager private constructor(private val context: Context) {
         text: String,
         width: Int = 3,
         height: Int = 162,
-        align: Int = PrintCommand.ALIGN_CENTER,
+        align: Int = ALIGN_CENTER,
         barcodeType: BarcodeType = BarcodeType.CODE128
     ) = withContext(Dispatchers.IO) {
         try {
@@ -364,7 +436,7 @@ class BtPrintManager private constructor(private val context: Context) {
             }
 
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
+            write(byteArrayOf(ESC, 0x61, align.toByte()))
 
             // 转换文本为字节数组（使用ASCII编码）
             val data = text.toByteArray(Charsets.US_ASCII)
@@ -466,7 +538,7 @@ class BtPrintManager private constructor(private val context: Context) {
         bitmap: Bitmap,
         width: Int = 200,
         height: Int = 200,
-        align: Int = PrintCommand.ALIGN_CENTER.toInt()
+        align: Int = ALIGN_CENTER.toInt()
     ) = withContext(Dispatchers.IO) {
         try {
             if (outputStream == null) {
@@ -475,7 +547,7 @@ class BtPrintManager private constructor(private val context: Context) {
             }
 
             // 设置对齐方式
-            write(byteArrayOf(PrintCommand.ESC, 0x61, align.toByte()))
+            write(byteArrayOf(ESC, 0x61, align.toByte()))
 
             // 计算每行字节数（8个点一个字节）
             val bytesPerLine = (width + 7) / 8 * 8
@@ -489,11 +561,11 @@ class BtPrintManager private constructor(private val context: Context) {
 
             // 发送图片数据
             // 设置行间距为0
-            write(byteArrayOf(PrintCommand.ESC, 0x33, 0))
+            write(byteArrayOf(ESC, 0x33, 0))
 
             // 发送 GS v 0 命令
             val command = byteArrayOf(
-                PrintCommand.GS, 0x76, 0x30, 0,  // GS v 0 命令
+                GS, 0x76, 0x30, 0,  // GS v 0 命令
                 (bytesPerLine / 8 % 256).toByte(),  // 宽度低字节
                 (bytesPerLine / 8 / 256).toByte(),  // 宽度高字节
                 (actualHeight % 256).toByte(),      // 高度低字节
@@ -534,10 +606,10 @@ class BtPrintManager private constructor(private val context: Context) {
             }
 
             // 换行
-            write(byteArrayOf(PrintCommand.FEED_LINE.toByte()))
+            write(byteArrayOf(FEED_LINE.toByte()))
 
             // 恢复行间距
-            write(byteArrayOf(PrintCommand.ESC, 0x33, 24))
+            write(byteArrayOf(ESC, 0x33, 24))
 
             Log.d(TAG, "打印图片成功")
         } catch (e: Exception) {
