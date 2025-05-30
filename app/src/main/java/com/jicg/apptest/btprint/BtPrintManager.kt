@@ -14,7 +14,6 @@ import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.Charset
 import java.util.*
-import kotlin.experimental.or
 
 /**
  * 蓝牙打印管理器
@@ -43,9 +42,9 @@ class BtPrintManager private constructor(private val context: Context) {
 
         const val ESC: Byte = 0x1B
         const val GS: Byte = 0x1D
-        
+
         val CHARSET_GBK = Charset.forName("GBK")
-        val FEED_LINE:Int = 0x0A
+        val FEED_LINE: Int = 0x0A
 
         @Synchronized
         fun getInstance(context: Context): BtPrintManager {
@@ -130,34 +129,38 @@ class BtPrintManager private constructor(private val context: Context) {
      * @param underline 下划线 (0-1)
      * @return 0:成功, 1:宽度参数错误, 2:高度参数错误, 3:粗体参数错误, 4:下划线参数错误
      */
-    suspend fun setFont(width: Int, height: Int, bold: Int, underline: Int): Int = withContext(Dispatchers.IO) {
-        try {
-            // 参数检查
-            if (width !in 0..7) return@withContext 1
-            if (height !in 0..7) return@withContext 2
-            if (bold !in 0..1) return@withContext 3
-            if (underline !in 0..1) return@withContext 4
+    suspend fun setFont(width: Int, height: Int, bold: Int, underline: Int): Int =
+        withContext(Dispatchers.IO) {
+            try {
+                // 参数检查
+                if (width !in 0..7) return@withContext 1
+                if (height !in 0..7) return@withContext 2
+                if (bold !in 0..1) return@withContext 3
+                if (underline !in 0..1) return@withContext 4
 
-            // 设置字体样式（粗体和下划线）
-            var style = 0
-            style = style or (bold shl 3)
-            style = style or (underline shl 7)
-            write(byteArrayOf(27, 33, style.toByte()))
+                // 设置字体样式（粗体和下划线）
+                var style = 0
+                style = style or (bold shl 3)
+                style = style or (underline shl 7)
+                write(byteArrayOf(27, 33, style.toByte()))
 
-            // 设置字体大小（宽度和高度）
-            var size = 0
-            size = size or (width shl 4)
-            size = size or height
-            write(byteArrayOf(29, 33, size.toByte()))
+                // 设置字体大小（宽度和高度）
+                var size = 0
+                size = size or (width shl 4)
+                size = size or height
+                write(byteArrayOf(29, 33, size.toByte()))
 
-            Log.d(TAG, "设置字体成功: width=$width, height=$height, bold=$bold, underline=$underline")
-            return@withContext 0
-        } catch (e: Exception) {
-            Log.e(TAG, "设置字体失败: ${e.message}")
-            e.printStackTrace()
-            throw e
+                Log.d(
+                    TAG,
+                    "设置字体成功: width=$width, height=$height, bold=$bold, underline=$underline"
+                )
+                return@withContext 0
+            } catch (e: Exception) {
+                Log.e(TAG, "设置字体失败: ${e.message}")
+                e.printStackTrace()
+                throw e
+            }
         }
-    }
 
     /**
      * 打印文本
@@ -447,9 +450,11 @@ class BtPrintManager private constructor(private val context: Context) {
                     // Codabar 需要额外的起始和结束字符
                     ByteArray(data.size + 16)
                 }
+
                 BarcodeType.CODE128, BarcodeType.ONE_CODE93 -> {
                     ByteArray(data.size + 14)
                 }
+
                 else -> {
                     ByteArray(data.size + 13)
                 }
@@ -487,11 +492,13 @@ class BtPrintManager private constructor(private val context: Context) {
                     System.arraycopy(data, 0, command, 14, data.size)
                     command[14 + data.size] = 0x41  // 结束字符
                 }
+
                 BarcodeType.CODE128, BarcodeType.ONE_CODE93 -> {
                     command[11] = barcodeType.code.toByte()
                     command[12] = text.length.toByte()
                     System.arraycopy(data, 0, command, 13, data.size)
                 }
+
                 else -> {
                     command[11] = barcodeType.code.toByte()
                     System.arraycopy(data, 0, command, 12, data.size)
@@ -585,7 +592,7 @@ class BtPrintManager private constructor(private val context: Context) {
                 // 计算当前行可用的字节数
                 val remainingBytes = totalBytes - currentPosition
                 val bytesToWrite = minOf(bytesPerLine, remainingBytes)
-                
+
                 // 复制当前行的数据
                 val lineData = buffer.copyOfRange(currentPosition, currentPosition + bytesToWrite)
                 cache.write(lineData)
@@ -622,20 +629,23 @@ class BtPrintManager private constructor(private val context: Context) {
     /**
      * 检查蓝牙连接状态
      */
-    fun isConnected(): Boolean {
-        return try {
-            if (bluetoothSocket?.isConnected == true && outputStream != null) {
-                // 尝试写入一个空字节来测试连接是否真的有效
-                outputStream?.write(byteArrayOf(0))
-                outputStream?.flush()
-                true
-            } else {
+    suspend fun isConnected(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                //bluetoothSocket?.isConnected == true &&
+                if (outputStream != null) {
+                    // 尝试写入一个空字节来测试连接是否真的有效
+                    outputStream?.write(byteArrayOf(0))
+                    outputStream?.flush()
+                    true
+                } else {
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "检查连接状态失败", e)
+                close()
                 false
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "检查连接状态失败", e)
-            close()
-            false
         }
     }
 

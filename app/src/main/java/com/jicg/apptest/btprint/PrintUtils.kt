@@ -171,7 +171,7 @@ object PrintUtils {
     /**
      * 检查打印机是否已连接
      */
-    fun isConnected(): Boolean {
+    suspend fun isConnected(): Boolean {
         return btPrintManager?.isConnected() == true
     }
 
