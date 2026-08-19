@@ -14,4 +14,8 @@
 .cxx
 local.properties
 /.idea
+/app/build
+/btprint-sdk/build
+/.codebuddy
+/app/release
 

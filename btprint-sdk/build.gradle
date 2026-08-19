@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.jicg.btprint'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+        consumerProguardFiles 'proguard-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        compose false
+    }
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+dependencies {
+    // 使用 api 暴露公共 API 依赖，保证宿主可访问 BtPrintActivity 等公开类型
+    api "androidx.core:core-ktx:1.12.0"
+    api "androidx.activity:activity-ktx:1.8.0"
+    api "androidx.lifecycle:lifecycle-runtime-ktx:2.7.0"
+    api 'com.google.android.material:material:1.11.0'
+    api 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}
