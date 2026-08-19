@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AppTest"
 include ':app'
+include ':btprint-sdk'

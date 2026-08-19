@@ -14,9 +14,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
-import com.jicg.apptest.btprint.BtPrintActivity
-import com.jicg.apptest.btprint.BtPrintManager
-import com.jicg.apptest.btprint.PrintUtils
+import com.jicg.btprint.BtPrintActivity
+import com.jicg.btprint.BtPrintManager
+import com.jicg.btprint.PrintUtils
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
