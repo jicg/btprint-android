@@ -8,6 +8,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -19,9 +21,10 @@ import java.util.*
  * 蓝牙打印管理器
  */
 class BtPrintManager private constructor(private val context: Context) {
+    private val writeMutex = Mutex()
     private var bluetoothSocket: BluetoothSocket? = null
     private var outputStream: OutputStream? = null
-    private var isConnected = false
+    private var connected = false
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
 
     companion object {
@@ -95,18 +98,24 @@ class BtPrintManager private constructor(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     suspend fun connect(device: BluetoothDevice): Boolean = withContext(Dispatchers.IO) {
-        try {
-            bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
-            bluetoothSocket?.connect()
-            outputStream = bluetoothSocket?.outputStream
-            // 保存成功连接的设备地址
-            saveLastDeviceAddress(device.address)
-            isConnected = true
-            true
-        } catch (e: IOException) {
-            Log.e(TAG, "连接蓝牙设备失败", e)
-            close()
-            false
+        writeMutex.withLock {
+            try {
+                bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
+                bluetoothSocket?.connect()
+                outputStream = bluetoothSocket?.outputStream
+                // 保存成功连接的设备地址
+                saveLastDeviceAddress(device.address)
+                connected = true
+                true
+            } catch (e: IOException) {
+                Log.e(TAG, "连接蓝牙设备失败", e)
+                closeInternal()
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "连接蓝牙设备失败", e)
+                closeInternal()
+                false
+            }
         }
     }
 
@@ -174,7 +183,8 @@ class BtPrintManager private constructor(private val context: Context) {
         fontSize: Int = FONT_SIZE_NORMAL,
         align: Int = ALIGN_LEFT,
         feedLines: Int = 1
-    ) = withContext(Dispatchers.IO) {
+    ) {
+        // 参数校验在协程切换之前执行，避免校验异常在 IO 线程抛出
         require(
             align in setOf(
                 ALIGN_LEFT,
@@ -188,47 +198,49 @@ class BtPrintManager private constructor(private val context: Context) {
             "Invalid font size value: $fontSize"
         }
 
-        try {
-            // 合并多次写入以提高性能
-            val outputBuffer = ByteArrayOutputStream().apply {
-                write(byteArrayOf(ESC, 0x61, align.toByte()))
-                // 设置字体大小
-                when (fontSize) {
-                    FONT_SIZE_SMALL -> {
-                        // 小字体
-                        write(byteArrayOf(ESC, 0x21, 0x01)) // 小字体
-                        write(byteArrayOf(ESC, 0x4D, 0))
+        withContext(Dispatchers.IO) {
+            try {
+                // 合并多次写入以提高性能
+                val outputBuffer = ByteArrayOutputStream().apply {
+                    write(byteArrayOf(ESC, 0x61, align.toByte()))
+                    // 设置字体大小
+                    when (fontSize) {
+                        FONT_SIZE_SMALL -> {
+                            // 小字体
+                            write(byteArrayOf(ESC, 0x21, 0x01)) // 小字体
+                            write(byteArrayOf(ESC, 0x4D, 0))
+                        }
+
+                        FONT_SIZE_NORMAL -> {
+                            // 正常字体
+                            write(byteArrayOf(ESC, 0x21, 0x00)) // 正常大小
+                            write(byteArrayOf(ESC, 0x4D, 0))
+                        }
+
+                        FONT_SIZE_LARGE -> {
+                            // 大字体
+                            write(byteArrayOf(ESC, 0x21, 0x33)) // 大字体
+                            write(byteArrayOf(ESC, 0x4D, 0))
+                        }
                     }
 
-                    FONT_SIZE_NORMAL -> {
-                        // 正常字体
-                        write(byteArrayOf(ESC, 0x21, 0x00)) // 正常大小
-                        write(byteArrayOf(ESC, 0x4D, 0))
-                    }
-
-                    FONT_SIZE_LARGE -> {
-                        // 大字体
-                        write(byteArrayOf(ESC, 0x21, 0x33)) // 大字体
-                        write(byteArrayOf(ESC, 0x4D, 0))
-                    }
-                }
-
-                // 写入文本（提取GBK编码为常量）
-                write(text.toByteArray(CHARSET_GBK))
+                    // 写入文本（提取GBK编码为常量）
+                    write(text.toByteArray(CHARSET_GBK))
 
 //                // 换行（支持多行）
-                repeat(feedLines) {
-                    write(0x0A) // 使用换行符
+                    repeat(feedLines) {
+                        write(0x0A) // 使用换行符
+                    }
                 }
+
+                // 单次IO写入操作
+                write(outputBuffer.toByteArray())
+
+                Log.d(TAG, "打印成功: ${text.take(20)}...") // 截断长文本
+            } catch (e: Exception) {
+                Log.e(TAG, "打印失败 | 错误类型: ${e.javaClass.simpleName} | 详情: ${e.message}")
+                throw e // 根据需求决定是否抛出
             }
-
-            // 单次IO写入操作
-            write(outputBuffer.toByteArray())
-
-            Log.d(TAG, "打印成功: ${text.take(20)}...") // 截断长文本
-        } catch (e: Exception) {
-            Log.e(TAG, "打印失败 | 错误类型: ${e.javaClass.simpleName} | 详情: ${e.message}")
-            throw e // 根据需求决定是否抛出
         }
     }
 
@@ -238,7 +250,7 @@ class BtPrintManager private constructor(private val context: Context) {
      * @param text2 右侧文本
      * @param align 对齐方式
      */
-    suspend fun printTwo(text1: String, text2: String) = withContext(Dispatchers.IO) {
+    suspend fun printTwo(text1: String, text2: String): Unit = withContext(Dispatchers.IO) {
         try {
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, 1.toByte()))
@@ -253,16 +265,24 @@ class BtPrintManager private constructor(private val context: Context) {
             val text1Width = getCharWidth(text1)
             val text2Width = getCharWidth(text2)
 
-            // 计算需要的空格数
-            val spaceCount = totalWidth - text1Width - text2Width
-            val spaces = " ".repeat(spaceCount)
-
-            // 打印文本（使用GBK编码）
-            write("$text1$spaces$text2".toByteArray(Charset.forName("GBK")))
+            if (text1Width + text2Width <= totalWidth) {
+                // 一行放得下：正常两列排版
+                // coerceAtLeast(0) 防止文本超宽时负数 repeat 崩溃
+                val spaceCount = (totalWidth - text1Width - text2Width).coerceAtLeast(0)
+                val spaces = " ".repeat(spaceCount)
+                // 打印文本（使用GBK编码）
+                write("$text1$spaces$text2".toByteArray(CHARSET_GBK))
+            } else {
+                // 超宽兜底：text2 换行到下一行，避免截断
+                write(text1.toByteArray(CHARSET_GBK))
+                write(byteArrayOf(FEED_LINE.toByte()))
+                write(text2.toByteArray(CHARSET_GBK))
+            }
             // 换行
             write(byteArrayOf(FEED_LINE.toByte()))
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             Log.e(TAG, "打印两列文本失败", e)
+            throw e
         }
     }
 
@@ -273,11 +293,19 @@ class BtPrintManager private constructor(private val context: Context) {
      * @param text3 右侧文本
      * @param fontSize 字体大小
      */
-    suspend fun printThree(text1: String, text2: String, text3: String, fontSize: Int) =
+    suspend fun printThree(text1: String, text2: String, text3: String, fontSize: Int) {
+        require(fontSize in setOf(FONT_SIZE_SMALL, FONT_SIZE_NORMAL, FONT_SIZE_LARGE)) {
+            "Invalid font size value: $fontSize"
+        }
         withContext(Dispatchers.IO) {
             try {
-                // 设置字体大小
-                write(byteArrayOf(ESC, 0x45, fontSize.toByte()))
+                // 设置字体大小（ESC ! n：与 printText 一致的字号映射，替代错误的 ESC E 加粗命令）
+                write(byteArrayOf(ESC, 0x21, when (fontSize) {
+                    FONT_SIZE_SMALL -> 0x01
+                    FONT_SIZE_NORMAL -> 0x00
+                    else -> 0x33
+                }.toByte()))
+                write(byteArrayOf(ESC, 0x4D, 0))
 
                 // 计算实际字符宽度（考虑中文字符）
                 val getStringPixLength = { str: String ->
@@ -304,20 +332,20 @@ class BtPrintManager private constructor(private val context: Context) {
                     remLength = WIDTH_PIXEL - middleLength - rightLength
                 }
 
-                // 计算空格数量
-                val size = remLength / SpaceLength
+                // 计算空格数量（coerceAtLeast 防止超宽时负数 repeat 崩溃）
+                val size = (remLength / SpaceLength).coerceAtLeast(0)
                 val WIDTH_PIXEL_MID_RIGHT = WIDTH_PIXEL - WIDTH_PIXEL_MID
 
                 // 根据左列长度决定空格分配方式
                 if (leftLength < WIDTH_PIXEL_MID && WIDTH_PIXEL_MID_RIGHT > (SpaceLength * 2 + middleLength / 2 + rightLength)) {
                     // 左列较短时的空格分配
-                    val leftSize = (WIDTH_PIXEL_MID - leftLength - middleLength / 2) / SpaceLength
-                    val rightSize = size - leftSize
+                    val leftSize = ((WIDTH_PIXEL_MID - leftLength - middleLength / 2) / SpaceLength).coerceAtLeast(0)
+                    val rightSize = (size - leftSize).coerceAtLeast(0)
                     result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
                 } else {
                     // 常规空格分配
-                    val leftSize = size * (WIDTH_PIXEL_MID / WIDTH_PIXEL)
-                    val rightSize = size - leftSize
+                    val leftSize = (size * (WIDTH_PIXEL_MID / WIDTH_PIXEL)).coerceAtLeast(0)
+                    val rightSize = (size - leftSize).coerceAtLeast(0)
                     result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
                 }
 
@@ -332,6 +360,7 @@ class BtPrintManager private constructor(private val context: Context) {
                 throw e
             }
         }
+    }
 
     /**
      * 打印分割线
@@ -343,12 +372,15 @@ class BtPrintManager private constructor(private val context: Context) {
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, ALIGN_CENTER.toByte()))
 
+            // 空字符防护：char 为空时回退默认 "-"，避免 char[0] 越界
+            val dividerChar = char.ifEmpty { "-" }
+
             // 计算实际字符宽度（考虑中文字符）
-            val charWidth = if (char[0].code > 127) 2 else 1
-            val actualLength = length / charWidth
+            val charWidth = if (dividerChar[0].code > 127) 2 else 1
+            val actualLength = (length / charWidth).coerceAtLeast(1)
 
             // 打印分割线
-            write(char.repeat(actualLength).toByteArray(Charset.forName("GBK")))
+            write(dividerChar.repeat(actualLength).toByteArray(CHARSET_GBK))
             // 换行
             write(byteArrayOf(FEED_LINE.toByte()))
         } catch (e: IOException) {
@@ -628,25 +660,10 @@ class BtPrintManager private constructor(private val context: Context) {
 
     /**
      * 检查蓝牙连接状态
+     * 纯内存状态判断，不向打印机写入任何字节
      */
     suspend fun isConnected(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                //bluetoothSocket?.isConnected == true &&
-                if (outputStream != null) {
-                    // 尝试写入一个空字节来测试连接是否真的有效
-                    outputStream?.write(byteArrayOf(0))
-                    outputStream?.flush()
-                    true
-                } else {
-                    false
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "检查连接状态失败", e)
-                close()
-                false
-            }
-        }
+        return bluetoothSocket?.isConnected == true && outputStream != null && connected
     }
 
     /**
@@ -654,34 +671,52 @@ class BtPrintManager private constructor(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     suspend fun reconnect(device: BluetoothDevice) = withContext(Dispatchers.IO) {
-        try {
-            // 先关闭现有连接
-            close()
+        writeMutex.withLock {
+            try {
+                // 先关闭现有连接
+                closeInternal()
 
-            // 创建新的连接
-            bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
-            bluetoothSocket?.connect()
-            outputStream = bluetoothSocket?.getOutputStream()
+                // 创建新的连接
+                bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
+                bluetoothSocket?.connect()
+                outputStream = bluetoothSocket?.getOutputStream()
 
-            // 测试连接是否有效
-            if (isConnected()) {
-                isConnected = true
-                true
-            } else {
-                close()
+                // 测试连接是否有效（纯状态检查，不写字节）
+                if (bluetoothSocket?.isConnected == true && outputStream != null) {
+                    connected = true
+                    true
+                } else {
+                    closeInternal()
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "重新连接失败", e)
+                closeInternal()
                 false
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "重新连接失败", e)
-            close()
-            false
         }
     }
 
     /**
-     * 关闭连接
+     * 关闭连接（非挂起签名不变，Mutex tryLock 避免阻塞调用方）
      */
     fun close() {
+        if (writeMutex.tryLock()) {
+            try {
+                closeInternal()
+            } finally {
+                writeMutex.unlock()
+            }
+        } else {
+            // 有写入进行中：直接关闭底层资源，写入方会捕获 IOException 兜底
+            closeInternal()
+        }
+    }
+
+    /**
+     * 实际关闭逻辑（调用方需自行保证与 writeMutex 的互斥）
+     */
+    private fun closeInternal() {
         try {
             outputStream?.close()
             bluetoothSocket?.close()
@@ -690,23 +725,26 @@ class BtPrintManager private constructor(private val context: Context) {
         } finally {
             outputStream = null
             bluetoothSocket = null
-            isConnected = false
+            connected = false
         }
     }
 
     /**
-     * 写入数据
+     * 写入数据（Mutex 串行化，保证并发打印时命令不交错）
      */
     private suspend fun write(data: ByteArray) = withContext(Dispatchers.IO) {
-        try {
-            if (!isConnected()) {
-                throw IOException("打印机未连接")
+        writeMutex.withLock {
+            try {
+                if (bluetoothSocket?.isConnected != true || outputStream == null || !connected) {
+                    throw IOException("打印机未连接")
+                }
+                outputStream?.write(data)
+                outputStream?.flush()
+            } catch (e: Exception) {
+                Log.e(TAG, "写入数据失败", e)
+                closeInternal()
+                throw e
             }
-            outputStream?.write(data)
-            outputStream?.flush()
-        } catch (e: Exception) {
-            Log.e(TAG, "写入数据失败", e)
-            throw e
         }
     }
 }
