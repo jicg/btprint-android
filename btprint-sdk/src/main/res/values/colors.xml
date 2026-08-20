@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主色调 -->
+    <color name="btp_primary">#2196F3</color>
+    <color name="btp_primary_dark">#1976D2</color>
+    <color name="btp_primary_light">#E3F2FD</color>
+    <!-- 状态色 -->
+    <color name="btp_success">#4CAF50</color>
+    <color name="btp_warning">#FF9800</color>
+    <color name="btp_error">#F44336</color>
+    <!-- 文字色 -->
+    <color name="btp_text_primary">#212121</color>
+    <color name="btp_text_secondary">#757575</color>
+    <color name="btp_white">#FFFFFF</color>
+    <!-- 背景与描边 -->
+    <color name="btp_bg">#F5F6FA</color>
+    <color name="btp_card_bg">#FFFFFF</color>
+    <color name="btp_border">#E0E0E0</color>
+    <color name="btp_pressed">#EEEEEE</color>
+    <color name="btp_disabled">#BDBDBD</color>
+</resources>

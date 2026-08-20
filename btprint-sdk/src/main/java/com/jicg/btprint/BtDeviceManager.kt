@@ -2,6 +2,7 @@ package com.jicg.btprint
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
@@ -20,7 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 蓝牙设备管理器
  */
 @SuppressLint("MissingPermission")
-class BtDeviceManager private constructor(private val context: Context) {
+class BtDeviceManager private constructor(private val context: Application) {
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
 
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
@@ -42,7 +43,7 @@ class BtDeviceManager private constructor(private val context: Context) {
         @Synchronized
         fun getInstance(context: Context): BtDeviceManager {
             if (instance == null) {
-                instance = BtDeviceManager(context.applicationContext)
+                instance = BtDeviceManager(context.applicationContext as Application)
             }
             return instance!!
         }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 蓝牙打印 SDK 自带主题，不依赖宿主应用资源 -->
-    <style name="Theme.BtPrint" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <!-- 蓝牙打印 SDK 自带主题，使用 Android 平台主题，不依赖 Material/宿主应用资源 -->
+    <style name="Theme.BtPrint" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

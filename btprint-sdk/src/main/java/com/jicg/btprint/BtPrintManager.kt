@@ -1,6 +1,7 @@
 package com.jicg.btprint
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
@@ -28,7 +29,7 @@ import java.util.*
 /**
  * 蓝牙打印管理器
  */
-class BtPrintManager private constructor(private val context: Context) {
+class BtPrintManager private constructor(private val context: Application) {
     private val writeMutex = Mutex()
     private var bluetoothSocket: BluetoothSocket? = null
     private var outputStream: OutputStream? = null
@@ -64,7 +65,7 @@ class BtPrintManager private constructor(private val context: Context) {
         @Synchronized
         fun getInstance(context: Context): BtPrintManager {
             if (instance == null) {
-                instance = BtPrintManager(context.applicationContext)
+                instance = BtPrintManager(context.applicationContext as Application)
                 instance?.registerConnectionMonitor()
             }
             return instance!!
@@ -263,13 +264,26 @@ class BtPrintManager private constructor(private val context: Context) {
      * 打印两列文本
      * @param text1 左侧文本
      * @param text2 右侧文本
-     * @param align 对齐方式
+     * @param fontSize 字体大小
      */
-    suspend fun printTwo(text1: String, text2: String): Unit = withContext(Dispatchers.IO) {
+    suspend fun printTwo(
+        text1: String,
+        text2: String,
+        fontSize: Int = FONT_SIZE_NORMAL
+    ): Unit = withContext(Dispatchers.IO) {
+        require(fontSize in setOf(FONT_SIZE_SMALL, FONT_SIZE_NORMAL, FONT_SIZE_LARGE)) {
+            "Invalid font size value: $fontSize"
+        }
         try {
+            // 设置字体大小（ESC ! n：与 printThree 一致的字号映射，默认 NORMAL 避免继承残留字号）
+            write(byteArrayOf(ESC, 0x21, when (fontSize) {
+                FONT_SIZE_SMALL -> 0x01
+                FONT_SIZE_NORMAL -> 0x00
+                else -> 0x33
+            }.toByte()))
+            write(byteArrayOf(ESC, 0x4D, 0))
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, 1.toByte()))
-            write(byteArrayOf(ESC, 0x4D, 0))
             // 计算实际字符宽度（考虑中文字符）
             val getCharWidth = { str: String ->
                 str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
