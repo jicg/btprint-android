@@ -12,19 +12,11 @@
 - **图片打印**：自动压缩 + Floyd-Steinberg 抖动点阵算法
 - **设备管理**：已配对设备列表、连接入口 UI（`BtPrintActivity`，可选集成）
 
-## 工程结构
 
-```
-├── btprint-sdk/                # SDK 模块（com.jicg.btprint）
-│   └── build/outputs/aar/      # 构建产物 btprint-sdk-release.aar
-└── app/                        # 演示（demo）应用，展示 SDK 集成方式
-```
 
-## 集成方式
 
-### 方式一：Maven Central（推荐，无需拷贝源码）
+## Maven Central
 
-SDK 已发布到 Maven Central（central.sonatype.com），直接引用坐标即可。
 
 **1. 在 `settings.gradle`（或根 `build.gradle`）的 `repositories` 中添加仓库（一般工程已有 `mavenCentral()`）：**
 
@@ -44,58 +36,6 @@ dependencyResolutionManagement {
 ```groovy
 dependencies {
     implementation 'io.github.jicg:btprint-sdk:1.0.0'
-}
-```
-
-**坐标信息**
-
-| 项 | 值 |
-|---|---|
-| 坐标系 | `io.github.jicg:btprint-sdk:1.0.0` |
-| 仓库地址 | `https://repo1.maven.org/maven2`（即 `mavenCentral()`） |
-| 产物 | AAR（含资源/清单）、sources 源码包（IDE 可跳转源码）、POM（自动带传递依赖）、GPG 签名 |
-
-**传递依赖**（POM 自动携带，消费方无需手动添加）：
-
-- `androidx.core:core-ktx:1.12.0`
-- `androidx.activity:activity-ktx:1.8.0`
-- `androidx.lifecycle:lifecycle-runtime-ktx:2.7.0`
-- `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3`
-
-**消费方要求**：
-
-- compileSdk ≥ 34、minSdk ≥ 21、targetSdk ≥ 34
-- AGP 8.x、Gradle 8.7+、JDK 17+
-- 需保留 `google()` / `mavenCentral()` 仓库用于解析上述传递依赖
-
-
-### 方式二：AAR 文件引入
-
-1. 构建 AAR：
-
-```bash
-gradlew :btprint-sdk:assembleRelease
-```
-
-2. 将 `btprint-sdk/build/outputs/aar/btprint-sdk-release.aar` 复制到宿主工程 `app/libs/` 目录
-
-3. 在 `app/build.gradle` 中引入：
-
-```groovy
-dependencies {
-    implementation files('libs/btprint-sdk-release.aar')
-}
-```
-
-### 方式三：Module 依赖（源码级集成）
-
-```groovy
-// settings.gradle
-include ':btprint-sdk'
-
-// app/build.gradle
-dependencies {
-    implementation project(':btprint-sdk')
 }
 ```
 
@@ -187,6 +127,6 @@ PrintUtils.disconnect()
 
 ## 注意事项
 
-- SDK 使用 GBK 编码发送文本，适配国内主流 58/80mm 热敏打印机
+- SDK 使用 GBK 编码发送文本，适配国内主流 58mm 热敏打印机
 - 图片打印建议使用黑白或高对比度图片，效果最佳
 - `PrintUtils` 内部持有独立协程作用域，`release()` 可释放资源
