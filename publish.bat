@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo   btprint-sdk 一键发布到 Gitee Maven 仓库
+echo   btprint-sdk 一键发布到 Gitee + GitHub（jsDelivr CDN）
 echo ==========================================
 echo.
 
@@ -15,11 +15,11 @@ if "%VERSION%"=="" (
     echo [错误] 未能在 btprint-sdk\build.gradle 中找到 version 配置
     exit /b 1
 )
-echo [1/3] 当前版本号: %VERSION%
+echo [1/4] 当前版本号: %VERSION%
 
 rem 2. 执行 maven-publish 生成产物
 echo.
-echo [2/3] 执行 gradlew :btprint-sdk:publish ...
+echo [2/4] 执行 gradlew :btprint-sdk:publish ...
 call gradlew.bat :btprint-sdk:publish
 if errorlevel 1 (
     echo [错误] publish 失败，请检查上方错误信息
@@ -28,7 +28,7 @@ if errorlevel 1 (
 
 rem 3. 提交产物并推送
 echo.
-echo [3/3] git 提交并推送到 Gitee ...
+echo [3/4] git 提交并推送到 Gitee ...
 git add repo/ btprint-sdk/build.gradle
 if errorlevel 1 (
     echo [错误] git add 失败
@@ -41,12 +41,27 @@ if errorlevel 1 (
 )
 git push origin master
 if errorlevel 1 (
-    echo [错误] git push 失败，请检查远程仓库与网络
+    echo [错误] git push origin (Gitee) 失败，请检查远程仓库与网络
     exit /b 1
+)
+
+rem 4. 推送到 GitHub（jsDelivr CDN 数据源）
+echo.
+echo [4/4] 推送到 GitHub（jsDelivr CDN 数据源）...
+git remote get-url github >nul 2>&1
+if errorlevel 1 (
+    echo [提示] 未配置 GitHub 远程，跳过（可执行 git remote add github https://github.com/jicg/btprint-android.git）
+) else (
+    git push github master
+    if errorlevel 1 (
+        echo [错误] git push github 失败，请检查 GitHub 远程与网络
+        exit /b 1
+    )
 )
 
 echo.
 echo ==========================================
 echo   发布完成: com.gitee.jicg:btprint-sdk:%VERSION%
+echo   repo/ 已同步到 GitHub，jsDelivr CDN 即刻生效
 echo ==========================================
 pause

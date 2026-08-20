@@ -523,9 +523,9 @@ object PrintUtils {
         dividerLength: Int = 32
     ) {
         val manager = getPrintManager()
-        manager.printDivider(dividerChar, dividerLength)
+//        manager.printDivider(dividerChar, dividerLength)
         manager.printText(text, fontSize, align, 1)
-        manager.printDivider(dividerChar, dividerLength)
+//        manager.printDivider(dividerChar, dividerLength)
     }
 
     /**
