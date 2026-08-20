@@ -19,4 +19,6 @@ local.properties
 /.codebuddy
 /app/release
 PUBLISHING.md
+app.jks
+*.jks
 
