@@ -1,6 +1,6 @@
-# 蓝牙打印 SDK（BtPrint SDK）
+# btprint-android（蓝牙打印 SDK）
 
-基于 Android + Kotlin 的蓝牙热敏打印机 SDK，提供完整的 ESC/POS 打印能力，可通过 AAR 或 Module 依赖集成到任意第三方 Android 应用。
+基于 Android + Kotlin 的蓝牙热敏打印机 SDK，提供完整的 ESC/POS 打印能力，可通过 **Gitee Maven 仓库**、AAR 文件或 Module 依赖集成到任意第三方 Android 应用。
 
 ## 功能特性
 
@@ -22,7 +22,58 @@
 
 ## 集成方式
 
-### 方式一：AAR 文件引入（推荐给第三方）
+### 方式一：Gitee Maven 仓库（推荐，无需拷贝源码）
+
+SDK 已发布到 Gitee 仓库 `btprint-android` 的 `repo/` 目录，作为静态 Maven 仓库供任意项目引用。
+
+**1. 在 `settings.gradle`（或根 `build.gradle`）的 `repositories` 中添加仓库地址：**
+
+```groovy
+dependencyResolutionManagement {
+    repositories {
+        maven { url 'https://gitee.com/jicg/btprint-android/raw/master/repo' }
+        google()
+        mavenCentral()
+    }
+}
+```
+
+> 若使用 `repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)`，必须配置在 `dependencyResolutionManagement` 中；否则可直接写在根 `build.gradle` 的 `allprojects { repositories { ... } }`。
+
+**2. 在模块 `build.gradle` 中声明依赖：**
+
+```groovy
+dependencies {
+    implementation 'com.gitee.jicg:btprint-sdk:1.0.0'
+}
+```
+
+**坐标信息**
+
+| 项 | 值 |
+|---|---|
+| 坐标系 | `com.gitee.jicg:btprint-sdk:1.0.0` |
+| 仓库地址 | `https://gitee.com/jicg/btprint-android/raw/master/repo` |
+| 产物 | AAR（含资源/清单）、sources 源码包（IDE 可跳转源码）、POM（自动带传递依赖） |
+
+**传递依赖**（POM 自动携带，消费方无需手动添加）：
+
+- `androidx.core:core-ktx:1.12.0`
+- `androidx.activity:activity-ktx:1.8.0`
+- `androidx.lifecycle:lifecycle-runtime-ktx:2.7.0`
+- `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3`
+
+**消费方要求**：
+
+- compileSdk ≥ 34、minSdk ≥ 21、targetSdk ≥ 34
+- AGP 8.x、Gradle 8.7+、JDK 17+
+- 需保留 `google()` / `mavenCentral()` 仓库用于解析上述传递依赖
+
+**发新版流程**：本仓库修改 SDK 后改 `btprint-sdk/build.gradle` 中 `version` → 执行 `gradlew :btprint-sdk:publish` → 提交 `repo/` 增量 → push 到 Gitee，消费方将版本号改为新版本即可。
+
+> 备注：仓库需为**公开**仓库，raw 地址方可匿名访问；若为私有仓库，消费方需在 Gradle 中配置 Gitee 账号 token 认证（`maven { credentials { username = '...'; password = '...' } }`）。
+
+### 方式二：AAR 文件引入
 
 1. 构建 AAR：
 
@@ -40,7 +91,7 @@ dependencies {
 }
 ```
 
-### 方式二：Module 依赖（源码级集成）
+### 方式三：Module 依赖（源码级集成）
 
 ```groovy
 // settings.gradle
