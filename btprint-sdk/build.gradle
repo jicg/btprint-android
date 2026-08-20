@@ -1,11 +1,13 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     id 'com.android.library'
     id 'org.jetbrains.kotlin.android'
-    id 'maven-publish'
+    id 'com.vanniktech.maven.publish' version '0.30.0'
 }
 
-// 发布坐标系：com.gitee.jicg:btprint-sdk:1.0.0
-group = 'com.gitee.jicg'
+// 发布坐标系：io.github.jicg:btprint-sdk:1.0.0（Maven Central）
+group = 'io.github.jicg'
 version = '1.0.0'
 
 android {
@@ -42,20 +44,32 @@ dependencies {
     api 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
 
-afterEvaluate {
-    publishing {
-        publications {
-            release(MavenPublication) {
-                artifactId = 'btprint-sdk'
-                // AGP 的 release component 已自动包含 aar + sources jar（releaseSourcesJar）
-                from components.release
+// Maven Central 发布配置（central.sonatype.com，新账号统一走 Central Portal）
+mavenPublishing {
+    coordinates('io.github.jicg', 'btprint-sdk', '1.0.0')
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
+    pom {
+        name = 'btprint-sdk'
+        description = '基于 Android + Kotlin 的蓝牙热敏打印机 SDK，提供完整的 ESC/POS 打印能力'
+        url = 'https://github.com/jicg/btprint-android'
+        licenses {
+            license {
+                name = 'MIT'
+                url = 'https://opensource.org/licenses/MIT'
             }
         }
-        repositories {
-            maven {
-                // 本地产物目录，提交到 Gitee 后作为静态 Maven 仓库
-                url = uri("${rootDir}/repo")
+        developers {
+            developer {
+                id = 'jicg'
+                name = 'jicg'
+                url = 'https://github.com/jicg'
             }
+        }
+        scm {
+            connection = 'scm:git:git@github.com:jicg/btprint-android.git'
+            developerConnection = 'scm:git:ssh://git@github.com:jicg/btprint-android.git'
+            url = 'https://github.com/jicg/btprint-android'
         }
     }
 }

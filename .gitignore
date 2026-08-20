@@ -18,4 +18,5 @@ local.properties
 /btprint-sdk/build
 /.codebuddy
 /app/release
+PUBLISHING.md
 

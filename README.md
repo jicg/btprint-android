@@ -1,6 +1,6 @@
 # btprint-android（蓝牙打印 SDK）
 
-基于 Android + Kotlin 的蓝牙热敏打印机 SDK，提供完整的 ESC/POS 打印能力，可通过 **GitHub Maven 仓库（jsDelivr CDN）**、AAR 文件或 Module 依赖集成到任意第三方 Android 应用。
+基于 Android + Kotlin 的蓝牙热敏打印机 SDK，提供完整的 ESC/POS 打印能力，可通过 **Maven Central**、AAR 文件或 Module 依赖集成到任意第三方 Android 应用。
 
 ## 功能特性
 
@@ -22,18 +22,17 @@
 
 ## 集成方式
 
-### 方式一：GitHub Maven 仓库（jsDelivr CDN，推荐，无需拷贝源码）
+### 方式一：Maven Central（推荐，无需拷贝源码）
 
-SDK 已发布到 GitHub 仓库 `jicg/btprint-android` 的 `repo/` 目录，通过 jsDelivr CDN 分发，作为静态 Maven 仓库供任意项目引用。
+SDK 已发布到 Maven Central（central.sonatype.com），直接引用坐标即可。
 
-**1. 在 `settings.gradle`（或根 `build.gradle`）的 `repositories` 中添加仓库地址：**
+**1. 在 `settings.gradle`（或根 `build.gradle`）的 `repositories` 中添加仓库（一般工程已有 `mavenCentral()`）：**
 
 ```groovy
 dependencyResolutionManagement {
     repositories {
-        maven { url 'https://cdn.jsdelivr.net/gh/jicg/btprint-android@master/repo' }
-        google()
         mavenCentral()
+        google()
     }
 }
 ```
@@ -44,7 +43,7 @@ dependencyResolutionManagement {
 
 ```groovy
 dependencies {
-    implementation 'com.gitee.jicg:btprint-sdk:1.0.0'
+    implementation 'io.github.jicg:btprint-sdk:1.0.0'
 }
 ```
 
@@ -52,9 +51,9 @@ dependencies {
 
 | 项 | 值 |
 |---|---|
-| 坐标系 | `com.gitee.jicg:btprint-sdk:1.0.0` |
-| 仓库地址 | `https://cdn.jsdelivr.net/gh/jicg/btprint-android@master/repo` |
-| 产物 | AAR（含资源/清单）、sources 源码包（IDE 可跳转源码）、POM（自动带传递依赖） |
+| 坐标系 | `io.github.jicg:btprint-sdk:1.0.0` |
+| 仓库地址 | `https://repo1.maven.org/maven2`（即 `mavenCentral()`） |
+| 产物 | AAR（含资源/清单）、sources 源码包（IDE 可跳转源码）、POM（自动带传递依赖）、GPG 签名 |
 
 **传递依赖**（POM 自动携带，消费方无需手动添加）：
 
@@ -69,11 +68,6 @@ dependencies {
 - AGP 8.x、Gradle 8.7+、JDK 17+
 - 需保留 `google()` / `mavenCentral()` 仓库用于解析上述传递依赖
 
-**发新版流程**：本仓库修改 SDK 后改 `btprint-sdk/build.gradle` 中 `version` → 执行 `gradlew :btprint-sdk:publish` → 提交 `repo/` 增量 → push 到 Gitee 与 GitHub，消费方将版本号改为新版本即可。
-
-> 注意：jsDelivr 对每个 URL 永久缓存（immutable）。发新版**必须递增版本号**（版本号变更后 `repo/` 内路径随之变化，天然避开缓存）；请勿重发同版本号覆盖旧产物，否则消费方可能拉到旧缓存。
-
-> 备注：jsDelivr 只能从**公开** GitHub 仓库拉取，免认证、无防盗链，国内访问快。请保持 GitHub 仓库公开；若为私有仓库，jsDelivr 将无法访问。
 
 ### 方式二：AAR 文件引入
 

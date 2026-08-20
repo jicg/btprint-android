@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ==========================================
-echo   btprint-sdk 一键发布到 Gitee + GitHub（jsDelivr CDN）
+echo   btprint-sdk 一键发布到 Maven Central
 echo ==========================================
 echo.
 
@@ -15,53 +15,33 @@ if "%VERSION%"=="" (
     echo [错误] 未能在 btprint-sdk\build.gradle 中找到 version 配置
     exit /b 1
 )
-echo [1/4] 当前版本号: %VERSION%
+echo [1/2] 当前版本号: %VERSION%
 
-rem 2. 执行 maven-publish 生成产物
+rem 2. 执行发布（上传 + 签名）
 echo.
-echo [2/4] 执行 gradlew :btprint-sdk:publish ...
-call gradlew.bat :btprint-sdk:publish
+echo [2/2] 执行 gradlew :btprint-sdk:publishToMavenCentral ...
+call gradlew.bat :btprint-sdk:publishToMavenCentral
 if errorlevel 1 (
-    echo [错误] publish 失败，请检查上方错误信息
+    echo [错误] 发布失败，请检查：
+    echo   1. gradle.properties 中的 mavenCentral.username / password 是否已填写
+    echo   2. signing.keyId / password / secretKeyRingFile 是否正确
+    echo   3. 是否已在 central.sonatype.com 验证命名空间 io.github.jicg
     exit /b 1
-)
-
-rem 3. 提交产物并推送
-echo.
-echo [3/4] git 提交并推送到 Gitee ...
-git add repo/ btprint-sdk/build.gradle
-if errorlevel 1 (
-    echo [错误] git add 失败
-    exit /b 1
-)
-git commit -m "release: btprint-sdk %VERSION%"
-if errorlevel 1 (
-    rem git commit 返回 1 通常表示无改动可提交（如产物未变化），属正常
-    echo [提示] 无新改动可提交，继续推送
-)
-git push origin master
-if errorlevel 1 (
-    echo [错误] git push origin (Gitee) 失败，请检查远程仓库与网络
-    exit /b 1
-)
-
-rem 4. 推送到 GitHub（jsDelivr CDN 数据源）
-echo.
-echo [4/4] 推送到 GitHub（jsDelivr CDN 数据源）...
-git remote get-url github >nul 2>&1
-if errorlevel 1 (
-    echo [提示] 未配置 GitHub 远程，跳过（可执行 git remote add github https://github.com/jicg/btprint-android.git）
-) else (
-    git push github master
-    if errorlevel 1 (
-        echo [错误] git push github 失败，请检查 GitHub 远程与网络
-        exit /b 1
-    )
 )
 
 echo.
 echo ==========================================
-echo   发布完成: com.gitee.jicg:btprint-sdk:%VERSION%
-echo   repo/ 已同步到 GitHub，jsDelivr CDN 即刻生效
+echo   上传成功: io.github.jicg:btprint-sdk:%VERSION%
 echo ==========================================
+echo.
+echo 下一步（手动完成发布）:
+echo   1. 登录 https://central.sonatype.com
+echo   2. 进入 Deployments 页面
+echo   3. 找到本次上传的部署，点击 Publish 按钮
+echo      （若已在 Account 设置中开启 Auto Publish，则跳过此步）
+echo.
+echo 发布后约 10 分钟同步到 Maven Central，消费方即可使用
+echo   implementation 'io.github.jicg:btprint-sdk:%VERSION%'
+echo.
+echo 注意: Maven Central 产物不可覆盖，发新版必须递增版本号！
 pause
