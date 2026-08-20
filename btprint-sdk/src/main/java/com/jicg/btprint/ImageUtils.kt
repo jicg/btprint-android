@@ -19,6 +19,9 @@ object ImageUtils {
      * @return 压缩后的图片
      */
     fun compressBitmap(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+        require(targetWidth > 0 && targetHeight > 0) {
+            "targetWidth 和 targetHeight 必须大于 0，当前: ${targetWidth}x$targetHeight"
+        }
         return try {
             Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         } catch (e: Exception) {
@@ -41,30 +44,34 @@ object ImageUtils {
         val dataSize = bytesPerLine * height
         val data = ByteArray(dataSize)
 
-        // 创建像素数组用于抖动处理
-        val pixels = Array(height) { IntArray(width) }
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                val pixel = bitmap.getPixel(x, y)
-                pixels[y][x] = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
-            }
+        // 批量读取像素到 IntArray（消除逐像素 getPixel 的 JNI 调用开销）
+        // 要求位图格式为 ARGB_8888（compressBitmap 的产物满足）
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        // 转为灰度数组
+        val gray = IntArray(width * height)
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            gray[i] = (Color.red(p) + Color.green(p) + Color.blue(p)) / 3
         }
 
         // Floyd-Steinberg 抖动算法
         for (y in 0 until height) {
             for (x in 0 until width) {
-                val oldValue = pixels[y][x]
+                val index = y * width + x
+                val oldValue = gray[index]
                 val newValue = if (oldValue > 127) 255 else 0
-                pixels[y][x] = newValue
+                gray[index] = newValue
 
                 val error = oldValue - newValue
 
                 // 分配误差到相邻像素
-                if (x + 1 < width) pixels[y][x + 1] += error * 7 / 16
+                if (x + 1 < width) gray[index + 1] += error * 7 / 16
                 if (y + 1 < height) {
-                    if (x > 0) pixels[y + 1][x - 1] += error * 3 / 16
-                    pixels[y + 1][x] += error * 5 / 16
-                    if (x + 1 < width) pixels[y + 1][x + 1] += error * 1 / 16
+                    if (x > 0) gray[index + width - 1] += error * 3 / 16
+                    gray[index + width] += error * 5 / 16
+                    if (x + 1 < width) gray[index + width + 1] += error * 1 / 16
                 }
             }
         }
@@ -72,7 +79,7 @@ object ImageUtils {
         // 转换为打印机数据
         for (y in 0 until height) {
             for (x in 0 until width) {
-                if (pixels[y][x] < 128) {
+                if (gray[y * width + x] < 128) {
                     val byteIndex = y * bytesPerLine + x / 8
                     val bitIndex = x % 8
                     data[byteIndex] = (data[byteIndex].toInt() or (0x80 shr bitIndex)).toByte()

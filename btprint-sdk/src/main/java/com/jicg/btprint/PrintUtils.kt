@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -23,7 +24,12 @@ import kotlinx.coroutines.launch
  */
 object PrintUtils {
     private lateinit var context: Context
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 协程作用域（release 后可惰性重建）
+     */
+    @Volatile
+    private var scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var initialized = false
     private var debugMode = false
 
@@ -36,6 +42,8 @@ object PrintUtils {
     fun init(context: Context) {
         this.context = context.applicationContext
         this.initialized = true
+        // release() 后再次 init 时重建协程作用域
+        ensureActiveScope()
     }
 
     /**
@@ -66,7 +74,19 @@ object PrintUtils {
     fun release() {
         scope.cancel()
         initialized = false
-        BtPrintManager.getInstance(context).close()
+        // 容错：未调用 init 直接 release 时 context 未初始化
+        if (::context.isInitialized) {
+            BtPrintManager.getInstance(context).close()
+        }
+    }
+
+    /**
+     * 确保协程作用域可用（scope 被取消后惰性重建）
+     */
+    private fun ensureActiveScope() {
+        if (!scope.isActive) {
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        }
     }
 
     /**
@@ -113,6 +133,8 @@ object PrintUtils {
         align: Int = ALIGN_LEFT,
         feedLines: Int = 1
     ): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printText(text, fontSize, align, feedLines)
@@ -138,6 +160,8 @@ object PrintUtils {
      * 打印两列文本
      */
     fun printTwo(text1: String, text2: String): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printTwo(text1, text2)
@@ -163,6 +187,8 @@ object PrintUtils {
         text3: String,
         fontSize: Int = FONT_SIZE_NORMAL
     ): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printThree(text1, text2, text3, fontSize)
@@ -188,6 +214,8 @@ object PrintUtils {
      * 打印分割线
      */
     fun printDivider(char: String = "-", length: Int = 32): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printDivider(char, length)
@@ -213,6 +241,8 @@ object PrintUtils {
         height: Int = 4,
         align: Int = ALIGN_CENTER
     ): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printQrCode(text, width, height, align)
@@ -244,6 +274,8 @@ object PrintUtils {
         align: Int = ALIGN_CENTER,
         barcodeType: BarcodeType = BarcodeType.CODE128
     ): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printBarCode(text, width, height, align, barcodeType)
@@ -270,6 +302,8 @@ object PrintUtils {
      * 打印图片
      */
     fun printImage(bitmap: Bitmap, width: Int = 200, height: Int = 200, align: Int = ALIGN_CENTER): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printImage(bitmap, width, height, align)
@@ -295,6 +329,8 @@ object PrintUtils {
      * 打印空行
      */
     fun printEmptyLines(lines: Int = 1): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 getPrintManager().printText("", FONT_SIZE_NORMAL, ALIGN_LEFT, lines)
@@ -321,6 +357,8 @@ object PrintUtils {
         dividerChar: String = "=",
         dividerLength: Int = 32
     ): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        ensureActiveScope()
         return scope.launch {
             try {
                 val manager = getPrintManager()

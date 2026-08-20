@@ -4,10 +4,18 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -25,6 +33,10 @@ class BtPrintManager private constructor(private val context: Context) {
     private var bluetoothSocket: BluetoothSocket? = null
     private var outputStream: OutputStream? = null
     private var connected = false
+    private var connectedDeviceAddress: String? = null
+    private var aclReceiver: BroadcastReceiver? = null
+    private val _connectedDevice = MutableStateFlow<BluetoothDevice?>(null)
+    val connectedDevice: StateFlow<BluetoothDevice?> = _connectedDevice.asStateFlow()
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
 
     companion object {
@@ -53,6 +65,7 @@ class BtPrintManager private constructor(private val context: Context) {
         fun getInstance(context: Context): BtPrintManager {
             if (instance == null) {
                 instance = BtPrintManager(context.applicationContext)
+                instance?.registerConnectionMonitor()
             }
             return instance!!
         }
@@ -72,7 +85,7 @@ class BtPrintManager private constructor(private val context: Context) {
     /**
      * 获取最后连接的设备地址
      */
-    private fun getLastDeviceAddress(): String? {
+    fun getLastDeviceAddress(): String? {
         return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .getString(KEY_LAST_DEVICE_ADDRESS, null)
     }
@@ -106,6 +119,8 @@ class BtPrintManager private constructor(private val context: Context) {
                 // 保存成功连接的设备地址
                 saveLastDeviceAddress(device.address)
                 connected = true
+                connectedDeviceAddress = device.address
+                _connectedDevice.value = device
                 true
             } catch (e: IOException) {
                 Log.e(TAG, "连接蓝牙设备失败", e)
@@ -579,6 +594,7 @@ class BtPrintManager private constructor(private val context: Context) {
         height: Int = 200,
         align: Int = ALIGN_CENTER.toInt()
     ) = withContext(Dispatchers.IO) {
+        require(width > 0 && height > 0) { "打印图片的宽高必须大于 0，当前: ${width}x$height" }
         try {
             if (outputStream == null) {
                 Log.e(TAG, "蓝牙未连接，无法打印图片")
@@ -684,6 +700,8 @@ class BtPrintManager private constructor(private val context: Context) {
                 // 测试连接是否有效（纯状态检查，不写字节）
                 if (bluetoothSocket?.isConnected == true && outputStream != null) {
                     connected = true
+                    connectedDeviceAddress = device.address
+                    _connectedDevice.value = device
                     true
                 } else {
                     closeInternal()
@@ -726,6 +744,86 @@ class BtPrintManager private constructor(private val context: Context) {
             outputStream = null
             bluetoothSocket = null
             connected = false
+            connectedDeviceAddress = null
+            _connectedDevice.value = null
+        }
+    }
+
+    /**
+     * 注册 ACL 连接状态广播监听（getInstance 时自动注册）
+     * 打印机被系统判定断开（断电/超出范围）时自动清理连接资源，
+     * 缩短"UI 显示已连接但实际已断开"的窗口期
+     */
+    fun registerConnectionMonitor() {
+        if (aclReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val action = intent.action ?: return
+                if (action != BluetoothDevice.ACTION_ACL_CONNECTED &&
+                    action != BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED &&
+                    action != BluetoothDevice.ACTION_ACL_DISCONNECTED
+                ) {
+                    return
+                }
+                @Suppress("DEPRECATION")
+                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+                if (action == BluetoothDevice.ACTION_ACL_CONNECTED) {
+                    Log.i(TAG, "ACL 已连接: ${device.name ?: "未知设备"}")
+                    return
+                }
+                // Android 12+ 读取设备地址需要 BLUETOOTH_CONNECT 权限
+                val address = try {
+                    device.address
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "无 BLUETOOTH_CONNECT 权限，无法读取断开设备地址", e)
+                    return
+                }
+                if (address == connectedDeviceAddress) {
+                    Log.i(TAG, "检测到打印机断开: $address")
+                    // 与 close() 无锁分支同款兜底：写入中的协程靠 IOException 收尾
+                    closeInternal()
+                }
+            }
+        }
+        aclReceiver = receiver
+        try {
+            val filter = IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            }
+            registerSystemReceiver(receiver, filter)
+            Log.i(TAG, "ACL 连接状态监听已注册")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "注册 ACL 监听失败: 缺少蓝牙权限", e)
+            aclReceiver = null
+        }
+    }
+
+    /**
+     * 动态注册系统广播接收器（兼容 Android 13+ 的导出标志要求）
+     */
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerSystemReceiver(receiver: BroadcastReceiver, filter: IntentFilter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            context.registerReceiver(receiver, filter)
+        }
+    }
+
+    /**
+     * 注销 ACL 广播监听（通常无需手动调用）
+     */
+    fun unregisterConnectionMonitor() {
+        aclReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "注销 ACL 监听失败", e)
+            }
+            aclReceiver = null
         }
     }
 
