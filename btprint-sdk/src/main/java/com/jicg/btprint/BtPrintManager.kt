@@ -46,6 +46,7 @@ class BtPrintManager private constructor(private val context: Application) {
         private var instance: BtPrintManager? = null
         private const val PREF_NAME = "bt_printer_pref"
         private const val KEY_LAST_DEVICE_ADDRESS = "last_device_address"
+        private const val KEY_PAPER_WIDTH = "paper_width"
 
         // 字体大小常量
         const val FONT_SIZE_SMALL = 0    // 小字体
@@ -70,6 +71,40 @@ class BtPrintManager private constructor(private val context: Application) {
             }
             return instance!!
         }
+    }
+
+    /**
+     * 纸张宽度规格
+     * @param charsPerLine 每行字符数（Font A 标准字号，中文按 2 字符宽计）
+     * @param dotsPerLine 每行打印点数（图片打印的最大宽度）
+     */
+    enum class PaperWidth(val charsPerLine: Int, val dotsPerLine: Int) {
+        MM_58(32, 384),   // 58mm 小票机
+        MM_80(48, 576);   // 80mm 小票机
+
+        companion object {
+            fun fromName(name: String?): PaperWidth =
+                entries.firstOrNull { it.name == name } ?: MM_58
+        }
+    }
+
+    /**
+     * 当前纸张宽度（默认 58mm），影响 printTwo/printThree/printDivider 的行宽
+     * 与 printImage 的最大打印宽度；设置后持久化，下次启动自动恢复
+     */
+    var paperWidth: PaperWidth = loadPaperWidth()
+        set(value) {
+            field = value
+            context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_PAPER_WIDTH, value.name)
+                .apply()
+        }
+
+    private fun loadPaperWidth(): PaperWidth {
+        val name = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_PAPER_WIDTH, null)
+        return PaperWidth.fromName(name)
     }
 
 
@@ -299,8 +334,12 @@ class BtPrintManager private constructor(private val context: Application) {
                 str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
             }
 
-            // 行宽按字号换算：大字体为倍宽模式，一行只能容纳一半字符
-            val totalWidth = if (fontSize == FONT_SIZE_LARGE) 16 else 32
+            // 行宽按纸张与字号换算：大字体为倍宽模式，一行只能容纳一半字符
+            val totalWidth = if (fontSize == FONT_SIZE_LARGE) {
+                paperWidth.charsPerLine / 2
+            } else {
+                paperWidth.charsPerLine
+            }
             val text1Width = getCharWidth(text1)
             val text2Width = getCharWidth(text2)
 
@@ -351,8 +390,12 @@ class BtPrintManager private constructor(private val context: Application) {
                     str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
                 }
 
-                // 打印机参数（行宽按字号换算：大字体为倍宽模式，一行只能容纳一半字符）
-                val WIDTH_PIXEL = if (fontSize == FONT_SIZE_LARGE) 16 else 32  // 打印机总宽度
+                // 打印机参数（行宽按纸张与字号换算：大字体为倍宽模式，一行只能容纳一半字符）
+                val WIDTH_PIXEL = if (fontSize == FONT_SIZE_LARGE) {
+                    paperWidth.charsPerLine / 2
+                } else {
+                    paperWidth.charsPerLine
+                }  // 打印机总宽度
                 val WIDTH_PIXEL_MID = WIDTH_PIXEL / 2  // 中间区域宽度
                 val SpaceLength = 1  // 空格宽度
 
@@ -404,9 +447,9 @@ class BtPrintManager private constructor(private val context: Application) {
     /**
      * 打印分割线
      * @param char 分割线字符
-     * @param length 长度
+     * @param length 长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
      */
-    suspend fun printDivider(char: String = "-", length: Int = 32) = withContext(Dispatchers.IO) {
+    suspend fun printDivider(char: String = "-", length: Int = -1) = withContext(Dispatchers.IO) {
         try {
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, ALIGN_CENTER.toByte()))
@@ -416,7 +459,8 @@ class BtPrintManager private constructor(private val context: Application) {
 
             // 计算实际字符宽度（考虑中文字符）
             val charWidth = if (dividerChar[0].code > 127) 2 else 1
-            val actualLength = (length / charWidth).coerceAtLeast(1)
+            val lineWidth = if (length > 0) length else paperWidth.charsPerLine
+            val actualLength = (lineWidth / charWidth).coerceAtLeast(1)
 
             // 打印分割线
             write(dividerChar.repeat(actualLength).toByteArray(CHARSET_GBK))
@@ -629,8 +673,8 @@ class BtPrintManager private constructor(private val context: Application) {
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, align.toByte()))
 
-            // 目标宽度：按 8 点（1 字节）向上取整
-            val targetWidthPx = (width + 7) / 8 * 8
+            // 目标宽度：钳制在当前纸宽的可打印点数内，再按 8 点（1 字节）向上取整
+            val targetWidthPx = (width.coerceAtMost(paperWidth.dotsPerLine) + 7) / 8 * 8
             // 计算实际高度（保持宽高比）
             val actualHeight = bitmap.height * targetWidthPx / bitmap.width
 

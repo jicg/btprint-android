@@ -352,9 +352,25 @@ object PrintUtils {
     }
 
     /**
-     * 打印分割线
+     * 设置纸张宽度（58mm / 80mm），影响多列排版、分割线与图片最大宽度
+     * 设置后持久化，下次启动自动恢复
      */
-    fun printDivider(char: String = "-", length: Int = 32): Job {
+    fun setPaperWidth(width: BtPrintManager.PaperWidth) {
+        getPrintManager().paperWidth = width
+    }
+
+    /**
+     * 获取当前纸张宽度（默认 58mm）
+     */
+    fun getPaperWidth(): BtPrintManager.PaperWidth {
+        return getPrintManager().paperWidth
+    }
+
+    /**
+     * 打印分割线
+     * @param length 长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
+     */
+    fun printDivider(char: String = "-", length: Int = -1): Job {
         return enqueue {
             try {
                 getPrintManager().printDivider(char, length)
@@ -368,8 +384,9 @@ object PrintUtils {
 
     /**
      * 打印分割线（挂起）
+     * @param length 长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
      */
-    suspend fun printDividerWait(char: String = "-", length: Int = 32) {
+    suspend fun printDividerWait(char: String = "-", length: Int = -1) {
         getPrintManager().printDivider(char, length)
     }
 
@@ -490,13 +507,14 @@ object PrintUtils {
 
     /**
      * 打印标题
+     * @param dividerLength 分割线长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
      */
     fun printTitle(
         text: String,
         fontSize: Int = FONT_SIZE_LARGE,
         align: Int = ALIGN_CENTER,
         dividerChar: String = "=",
-        dividerLength: Int = 32
+        dividerLength: Int = -1
     ): Job {
         return enqueue {
             try {
@@ -514,13 +532,14 @@ object PrintUtils {
 
     /**
      * 打印标题（挂起）
+     * @param dividerLength 分割线长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
      */
     suspend fun printTitleWait(
         text: String,
         fontSize: Int = FONT_SIZE_LARGE,
         align: Int = ALIGN_CENTER,
         dividerChar: String = "=",
-        dividerLength: Int = 32
+        dividerLength: Int = -1
     ) {
         val manager = getPrintManager()
         manager.printDivider(dividerChar, dividerLength)
