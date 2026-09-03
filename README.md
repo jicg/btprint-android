@@ -8,7 +8,7 @@
 - **传输层抽象**：`PrintTransport` 接口隔离传输与 ESC/POS 指令编排，可自定义扩展其他通道
 - **纸张宽度**：支持 58mm（32 字符/行）与 80mm（48 字符/行）小票机，可切换并持久化
 - **文本打印**：支持字号（小/中/大）、对齐方式（左/中/右）、多行换行
-- **排版打印**：两列 / 三列排版、分割线、标题（行宽随纸张与字号自动换算）
+- **排版打印**：两列 / 三列排版、分割线、标题（行宽随纸张与字号自动换算）；多列超宽可选表格模式（列内折行、多列均分空间）
 - **二维码打印**：支持自定义大小与对齐（内容限 ASCII，中文会变 `?`）
 - **条形码打印**：支持 CODE128、EAN13、EAN8、UPC-A、UPC-E、CODE39、ITF、ONE_CODE93、CODABAR 共 9 种类型
 - **图片打印**：自动压缩 + Floyd-Steinberg 抖动点阵算法
@@ -63,6 +63,8 @@ class MyApp : Application() {
         PrintUtils.init(this)
         // 可选：切换纸张宽度（默认 58mm），设置后持久化，下次启动自动恢复
         PrintUtils.setPaperWidth(BtPrintManager.PaperWidth.MM_80)
+        // 可选：多列排版超宽时按表格模式折行（默认关闭，保持"超宽列掉到下一行"的旧行为）
+        PrintUtils.setColumnWrapEnabled(true)
     }
 }
 ```

@@ -442,6 +442,23 @@ object PrintUtils {
     }
 
     /**
+     * 全局配置：多列排版（printTwo / printThree）的超宽处理方式
+     * false（默认）保持旧行为——超宽列整体掉到下一行；
+     * true 启用表格模式——该列在预算宽度内折行（折行宽度 = 第一折宽度，后续每折不超过它），
+     * 右列折行靠右、中列折行居中；多列同时超行时均分空间，列间至少留 1 空格
+     */
+    fun setColumnWrapEnabled(enabled: Boolean) {
+        getPrintManager().columnWrapEnabled = enabled
+    }
+
+    /**
+     * 当前多列表格模式是否开启
+     */
+    fun isColumnWrapEnabled(): Boolean {
+        return getPrintManager().columnWrapEnabled
+    }
+
+    /**
      * 打印分割线
      * @param length 长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
      */

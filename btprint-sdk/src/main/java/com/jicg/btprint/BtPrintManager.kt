@@ -104,6 +104,15 @@ class BtPrintManager private constructor(private val context: Application) {
     }
 
     /**
+     * 多列排版（printTwo/printThree）超宽处理的全局开关：
+     * false（默认）保持旧行为——超宽列掉到下一行；
+     * true 启用表格模式——列内折行、多列超长均分空间（见 ColumnLayout）
+     * 也可通过 PrintUtils.setColumnWrapEnabled 设置
+     */
+    @Volatile
+    var columnWrapEnabled: Boolean = false
+
+    /**
      * 当前纸张宽度（默认 58mm），影响 printTwo/printThree/printDivider 的行宽
      * 与 printImage 的最大打印宽度；设置后持久化，下次启动自动恢复
      */
@@ -406,34 +415,22 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(ESC, 0x4D, 0))
             // 两列排版依赖手动补空格，左对齐语义最准确（居中会让超宽兜底的两行都居中）
             write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
-            // 计算实际字符宽度（考虑中文字符）
-            val getCharWidth = { str: String ->
-                str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
-            }
-
             // 行宽按纸张与字号换算：大字体为倍宽模式，一行只能容纳一半字符
             val totalWidth = if (fontSize == FONT_SIZE_LARGE) {
                 paperWidth.charsPerLine / 2
             } else {
                 paperWidth.charsPerLine
             }
-            val text1Width = getCharWidth(text1)
-            val text2Width = getCharWidth(text2)
-
-            if (text1Width + text2Width <= totalWidth) {
-                // 一行放得下：正常两列排版
-                // coerceAtLeast(0) 防止文本超宽时负数 repeat 崩溃
-                val spaceCount = (totalWidth - text1Width - text2Width).coerceAtLeast(0)
-                val spaces = " ".repeat(spaceCount)
-                // 打印文本（使用GBK编码）
-                write("$text1$spaces$text2".toByteArray(CHARSET_GBK))
-            } else {
-                // 超宽兜底：text2 换行到下一行，避免截断
-                write(text1.toByteArray(CHARSET_GBK))
-                write(byteArrayOf(FEED_LINE.toByte()))
-                write(text2.toByteArray(CHARSET_GBK))
+            val w1 = ColumnLayout.textWidth(text1)
+            val w2 = ColumnLayout.textWidth(text2)
+            // 默认模式：单行放不下时右列掉到下一行；表格模式（columnWrapEnabled）：列内折行
+            val lines = when {
+                w1 + w2 <= totalWidth ->
+                    listOf(text1 + " ".repeat((totalWidth - w1 - w2).coerceAtLeast(0)) + text2)
+                columnWrapEnabled -> ColumnLayout.renderTwo(text1, text2, totalWidth)
+                else -> listOf(text1, text2)
             }
-            // 换行
+            write(lines.joinToString("\n").toByteArray(CHARSET_GBK))
             write(byteArrayOf(FEED_LINE.toByte()))
         } catch (e: Exception) {
             Log.e(TAG, "打印两列文本失败", e)
@@ -464,54 +461,22 @@ class BtPrintManager private constructor(private val context: Application) {
                 // 显式声明左对齐：三列排版按整行计算空隙，若继承上一次任务的居中对齐会整体错位
                 write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
 
-                // 计算实际字符宽度（考虑中文字符）
-                val getStringPixLength = { str: String ->
-                    str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
-                }
-
-                // 打印机参数（行宽按纸张与字号换算：大字体为倍宽模式，一行只能容纳一半字符）
-                val WIDTH_PIXEL = if (fontSize == FONT_SIZE_LARGE) {
+                // 行宽按纸张与字号换算：大字体为倍宽模式，一行只能容纳一半字符
+                val totalWidth = if (fontSize == FONT_SIZE_LARGE) {
                     paperWidth.charsPerLine / 2
                 } else {
                     paperWidth.charsPerLine
-                }  // 打印机总宽度
-                val WIDTH_PIXEL_MID = WIDTH_PIXEL / 2  // 中间区域宽度
-                val SpaceLength = 1  // 空格宽度
-
-                // 计算各列文本宽度
-                val leftLength = getStringPixLength(text1)
-                val middleLength = getStringPixLength(text2)
-                val rightLength = getStringPixLength(text3)
-
-                // 计算剩余空间
-                var remLength = WIDTH_PIXEL - rightLength - leftLength - middleLength
-                var result = text1
-
-                // 如果空间不足，左列换行
-                if (remLength < 0) {
-                    result += "\n"
-                    remLength = WIDTH_PIXEL - middleLength - rightLength
                 }
-
-                // 计算空格数量（coerceAtLeast 防止超宽时负数 repeat 崩溃）
-                val size = (remLength / SpaceLength).coerceAtLeast(0)
-                val WIDTH_PIXEL_MID_RIGHT = WIDTH_PIXEL - WIDTH_PIXEL_MID
-
-                // 根据左列长度决定空格分配方式
-                if (leftLength < WIDTH_PIXEL_MID && WIDTH_PIXEL_MID_RIGHT > (SpaceLength * 2 + middleLength / 2 + rightLength)) {
-                    // 左列较短时的空格分配
-                    val leftSize = ((WIDTH_PIXEL_MID - leftLength - middleLength / 2) / SpaceLength).coerceAtLeast(0)
-                    val rightSize = (size - leftSize).coerceAtLeast(0)
-                    result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
-                } else {
-                    // 常规空格分配（先乘后除：Int 除法 WIDTH_PIXEL_MID / WIDTH_PIXEL 恒为 0）
-                    val leftSize = (size * WIDTH_PIXEL_MID / WIDTH_PIXEL).coerceAtLeast(0)
-                    val rightSize = (size - leftSize).coerceAtLeast(0)
-                    result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
+                val w1 = ColumnLayout.textWidth(text1)
+                val w2 = ColumnLayout.textWidth(text2)
+                val w3 = ColumnLayout.textWidth(text3)
+                // 默认模式：超宽时左列掉到下一行；表格模式（columnWrapEnabled）：列内折行、多列超行均分空间
+                val lines = when {
+                    w1 + w2 + w3 <= totalWidth || !columnWrapEnabled ->
+                        legacyThreeColumnLines(text1, text2, text3, totalWidth)
+                    else -> ColumnLayout.renderThree(text1, text2, text3, totalWidth)
                 }
-
-                // 打印文本（使用GBK编码）
-                write(result.toByteArray(Charset.forName("GBK")))
+                write(lines.joinToString("\n").toByteArray(CHARSET_GBK))
                 // 换行
                 write(byteArrayOf(FEED_LINE.toByte()))
                 Log.d(TAG, "打印三列文本成功: $text1 | $text2 | $text3")
@@ -521,6 +486,48 @@ class BtPrintManager private constructor(private val context: Application) {
                 throw e
             }
         }
+    }
+
+    /**
+     * 三列排版旧版算法（columnWrapEnabled = false 时使用）
+     * 单行放不下时左列独占第一行，中右列排在第二行，不截断
+     */
+    private fun legacyThreeColumnLines(
+        text1: String,
+        text2: String,
+        text3: String,
+        totalWidth: Int,
+    ): List<String> {
+        val leftLength = ColumnLayout.textWidth(text1)
+        val middleLength = ColumnLayout.textWidth(text2)
+        val rightLength = ColumnLayout.textWidth(text3)
+
+        var remLength = totalWidth - rightLength - leftLength - middleLength
+
+        // 如果空间不足，左列换行
+        val leftDropped = remLength < 0
+        if (leftDropped) {
+            remLength = totalWidth - middleLength - rightLength
+        }
+
+        val size = (remLength / 1).coerceAtLeast(0)
+        val widthPixelMid = totalWidth / 2
+        val widthPixelMidRight = totalWidth - widthPixelMid
+
+        // 两种空格分配策略（左列较短时优先把中列推到行中，否则按剩余空间比例分配）
+        val line: String = if (leftLength < widthPixelMid &&
+            widthPixelMidRight > (2 + middleLength / 2 + rightLength)
+        ) {
+            val leftSize = (widthPixelMid - leftLength - middleLength / 2).coerceAtLeast(0)
+            val rightSize = (size - leftSize).coerceAtLeast(0)
+            " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
+        } else {
+            // 先乘后除：Int 除法 widthPixelMid / totalWidth 恒为 0
+            val leftSize = (size * widthPixelMid / totalWidth).coerceAtLeast(0)
+            val rightSize = (size - leftSize).coerceAtLeast(0)
+            " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
+        }
+        return if (leftDropped) listOf(text1, line) else listOf(text1 + line)
     }
 
     /**
