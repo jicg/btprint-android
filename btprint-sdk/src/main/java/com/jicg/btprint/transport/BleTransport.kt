@@ -7,7 +7,6 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -143,12 +142,8 @@ class BleTransport(
         connectDefer = defer
         mainHandler.post {
             val g = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE, mainHandler)
-                } else {
-                    @Suppress("DEPRECATION")
-                    device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-                }
+                // 4 参重载（API 21）的回调固定投递到主线程，无需 Handler 变体
+                device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
             } catch (e: Exception) {
                 connectDefer = null
                 defer.completeExceptionally(IOException("BLE 连接启动失败: ${e.message}"))
