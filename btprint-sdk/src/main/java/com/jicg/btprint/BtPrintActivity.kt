@@ -362,7 +362,7 @@ class BtPrintActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             // BLE 机型走 GATT 透传，经典机型走 SPP 通道
-            val connected = if (device.type == BluetoothDevice.DEVICE_TYPE_BLE) {
+            val connected = if (device.type == BluetoothDevice.DEVICE_TYPE_LE) {
                 btPrintManager.connectBle(device)
             } else {
                 btPrintManager.connect(device)
