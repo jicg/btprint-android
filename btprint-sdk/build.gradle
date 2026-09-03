@@ -9,7 +9,7 @@ plugins {
 // 发布坐标系：io.github.jicg:btprint-sdk（Maven Central）
 // 版本号只需改这里，coordinates 自动引用，避免两处硬编码错位
 group = 'io.github.jicg'
-version = '1.0.1'
+version = '1.1.0'
 
 android {
     namespace 'com.jicg.btprint'

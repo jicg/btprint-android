@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,6 +11,11 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.os.Build
 import android.util.Log
+import com.jicg.btprint.transport.BleTransport
+import com.jicg.btprint.transport.ConnectionTarget
+import com.jicg.btprint.transport.PrintTransport
+import com.jicg.btprint.transport.SppTransport
+import com.jicg.btprint.transport.TcpTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,33 +25,39 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.io.OutputStream
 import java.nio.charset.Charset
-import java.util.*
 
 /**
  * 蓝牙打印管理器
  */
 class BtPrintManager private constructor(private val context: Application) {
     private val writeMutex = Mutex()
-    /** 串行化 connect/reconnect，与写锁分离：RFCOMM 连接可能阻塞 10 秒以上，持写锁会冻结整个打印队列 */
+    /** 串行化 connect/reconnect，与写锁分离：RFCOMM/BLE 连接可能阻塞 10 秒以上，持写锁会冻结整个打印队列 */
     private val connectMutex = Mutex()
-    @Volatile private var bluetoothSocket: BluetoothSocket? = null
-    @Volatile private var outputStream: OutputStream? = null
+    @Volatile private var transport: PrintTransport? = null
     @Volatile private var connected = false
     @Volatile private var connectedDeviceAddress: String? = null
     private var aclReceiver: BroadcastReceiver? = null
     private val _connectedDevice = MutableStateFlow<BluetoothDevice?>(null)
+    /** 当前连接的蓝牙设备（TCP 网络打印机时为 null） */
     val connectedDevice: StateFlow<BluetoothDevice?> = _connectedDevice.asStateFlow()
+    private val _connectionTarget = MutableStateFlow<ConnectionTarget?>(null)
+    /** 当前连接目标（蓝牙设备或网络地址），断开时为 null */
+    val connectionTarget: StateFlow<ConnectionTarget?> = _connectionTarget.asStateFlow()
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
 
     companion object {
         private const val TAG = "BtPrintManager"
-        private const val SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
         private var instance: BtPrintManager? = null
         private const val PREF_NAME = "bt_printer_pref"
         private const val KEY_LAST_DEVICE_ADDRESS = "last_device_address"
+        private const val KEY_LAST_DEVICE_TYPE = "last_device_type"
         private const val KEY_PAPER_WIDTH = "paper_width"
+
+        /** 持久化的连接类型 */
+        private const val TYPE_SPP = "spp"
+        private const val TYPE_BLE = "ble"
+        private const val TYPE_TCP = "tcp"
 
         // 字体大小常量
         const val FONT_SIZE_SMALL = 0    // 小字体
@@ -116,10 +126,11 @@ class BtPrintManager private constructor(private val context: Application) {
     /**
      * 保存最后连接的设备地址
      */
-    private fun saveLastDeviceAddress(address: String) {
+    private fun saveLastTarget(type: String, address: String) {
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LAST_DEVICE_ADDRESS, address)
+            .putString(KEY_LAST_DEVICE_TYPE, type)
             .apply()
     }
 
@@ -132,67 +143,105 @@ class BtPrintManager private constructor(private val context: Application) {
     }
 
     /**
-     * 自动连接上次的设备
+     * 自动连接上次的设备（按上次成功时使用的传输类型：SPP / BLE / TCP）
      */
     suspend fun autoConnectLastDevice(): Boolean = withContext(Dispatchers.IO) {
         try {
             val lastAddress = getLastDeviceAddress() ?: return@withContext false
-            val device = bluetoothAdapter?.getRemoteDevice(lastAddress) ?: return@withContext false
-            return@withContext connect(device)
+            when (getLastDeviceType()) {
+                TYPE_BLE -> {
+                    val device = bluetoothAdapter?.getRemoteDevice(lastAddress)
+                        ?: return@withContext false
+                    connectBle(device)
+                }
+                TYPE_TCP -> {
+                    val sep = lastAddress.lastIndexOf(':')
+                    if (sep <= 0) return@withContext false
+                    val host = lastAddress.substring(0, sep)
+                    val port = lastAddress.substring(sep + 1).toIntOrNull()
+                        ?: return@withContext false
+                    connectTcp(host, port)
+                }
+                else -> {
+                    val device = bluetoothAdapter?.getRemoteDevice(lastAddress)
+                        ?: return@withContext false
+                    connect(device)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "自动连接上次设备失败", e)
             return@withContext false
         }
     }
 
+    private fun getLastDeviceType(): String {
+        return context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_DEVICE_TYPE, TYPE_SPP) ?: TYPE_SPP
+    }
+
     /**
-     * 连接蓝牙设备
+     * 连接蓝牙设备（经典蓝牙 SPP 通道，兼容旧行为）
      * @param device 蓝牙设备
      * @return 是否连接成功
      *
      * 说明：连接期间并发打印会快速失败（IOException("打印机未连接")）而不是阻塞等待，
      * 这是有意设计——避免 RFCOMM 连接耗时冻结整个打印队列。
      */
-    @SuppressLint("MissingPermission")
-    suspend fun connect(device: BluetoothDevice): Boolean = withContext(Dispatchers.IO) {
+    suspend fun connect(device: BluetoothDevice): Boolean =
+        connectTransport(SppTransport(context, device), TYPE_SPP, device.address)
+
+    /**
+     * 连接 BLE（低功耗蓝牙）打印机
+     * 自动查找常见透传 characteristic 并按 MTU 分包写入
+     */
+    suspend fun connectBle(device: BluetoothDevice): Boolean =
+        connectTransport(BleTransport(context, device), TYPE_BLE, device.address)
+
+    /**
+     * 连接网络打印机（Wi-Fi / 以太网，ESC/POS over TCP）
+     * @param host 打印机 IP 或域名
+     * @param port 端口，默认 9100
+     */
+    suspend fun connectTcp(host: String, port: Int = TcpTransport.DEFAULT_PORT): Boolean =
+        connectTransport(TcpTransport(host, port), TYPE_TCP, "$host:$port")
+
+    /**
+     * 传输层统一连接入口：串行化连接、互斥发布、失败收尾
+     */
+    private suspend fun connectTransport(
+        t: PrintTransport,
+        type: String,
+        address: String,
+    ): Boolean = withContext(Dispatchers.IO) {
         connectMutex.withLock {
-            // 尚未发布的本地 socket：连接中途失败时负责关闭，避免 fd 泄漏
-            var pendingSocket: BluetoothSocket? = null
+            // 尚未发布的传输层：连接中途失败时负责关闭，避免资源泄漏
+            var pending: PrintTransport? = t
             try {
-                // 扫描会显著拖慢甚至导致 RFCOMM 连接失败，连接前先停止扫描
-                try {
-                    bluetoothAdapter?.takeIf { it.isDiscovering }?.cancelDiscovery()
-                } catch (e: SecurityException) {
-                    Log.w(TAG, "取消扫描失败: 缺少蓝牙权限", e)
-                }
-                // 先关闭旧连接，避免已连接状态下重复 connect 泄漏旧 socket
-                //（多数热敏打印机仅支持 1 路 SPP 连接，旧连接不释放会导致新连接失败）
+                t.onDisconnected = { handleUnexpectedDisconnect() }
+                // 先关闭旧连接，避免重复连接泄漏旧通道
                 writeMutex.withLock { closeInternal() }
-                // 建立 RFCOMM 连接期间不持写锁，期间到达的打印任务会快速失败
-                val socket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
-                pendingSocket = socket
-                socket.connect()
-                val stream = socket.outputStream
-                // 发布新连接：与写入互斥，避免写入方读到半初始化的 socket
+                // 建立连接期间不持写锁，期间到达的打印任务会快速失败
+                t.connect()
+                // 发布新连接：与写入互斥，避免写入方读到半初始化的通道
                 writeMutex.withLock {
-                    bluetoothSocket = socket
-                    outputStream = stream
+                    transport = t
                     connected = true
-                    connectedDeviceAddress = device.address
-                    _connectedDevice.value = device
-                    pendingSocket = null
+                    connectedDeviceAddress = address
+                    _connectedDevice.value =
+                        (t.target as? ConnectionTarget.BluetoothTarget)?.device
+                    _connectionTarget.value = t.target
+                    pending = null
                 }
-                // 保存成功连接的设备地址
-                saveLastDeviceAddress(device.address)
+                saveLastTarget(type, address)
                 true
             } catch (e: IOException) {
-                Log.e(TAG, "连接蓝牙设备失败", e)
-                closePendingSocket(pendingSocket)
+                Log.e(TAG, "连接打印机失败", e)
+                pending?.close()
                 writeMutex.withLock { closeInternal() }
                 false
             } catch (e: Exception) {
-                Log.e(TAG, "连接蓝牙设备失败", e)
-                closePendingSocket(pendingSocket)
+                Log.e(TAG, "连接打印机失败", e)
+                pending?.close()
                 writeMutex.withLock { closeInternal() }
                 false
             }
@@ -200,14 +249,11 @@ class BtPrintManager private constructor(private val context: Application) {
     }
 
     /**
-     * 关闭未发布的本地 socket（best-effort）
+     * 传输层主动上报连接断开（如 BLE 链路丢失）：与 close() 同款兜底收尾
      */
-    private fun closePendingSocket(socket: BluetoothSocket?) {
-        try {
-            socket?.close()
-        } catch (e: Exception) {
-            Log.w(TAG, "关闭未发布的 socket 失败", e)
-        }
+    private fun handleUnexpectedDisconnect() {
+        Log.i(TAG, "传输层上报连接断开")
+        close()
     }
 
     /**
@@ -518,9 +564,7 @@ class BtPrintManager private constructor(private val context: Application) {
             require(mode == CUT_FULL || mode == CUT_PARTIAL) { "Invalid cut mode: $mode" }
             require(feedLines >= 0) { "Invalid feed lines value: $feedLines" }
             try {
-                if (outputStream == null) {
-                    throw IOException("打印机未连接")
-                }
+                ensureTransport()
                 if (feedLines > 0) {
                     write(ByteArray(feedLines) { FEED_LINE.toByte() })
                 }
@@ -543,9 +587,7 @@ class BtPrintManager private constructor(private val context: Application) {
         withContext(Dispatchers.IO) {
             require(pin in 0..1) { "Invalid cash drawer pin: $pin" }
             try {
-                if (outputStream == null) {
-                    throw IOException("打印机未连接")
-                }
+                ensureTransport()
                 // ESC p m t1 t2
                 write(
                     byteArrayOf(
@@ -579,9 +621,7 @@ class BtPrintManager private constructor(private val context: Application) {
         }
         withContext(Dispatchers.IO) {
             try {
-                if (outputStream == null) {
-                    throw IOException("打印机未连接")
-                }
+                ensureTransport()
 
                 // 设置对齐方式
                 write(byteArrayOf(ESC, 0x61, align.toByte()))
@@ -649,9 +689,7 @@ class BtPrintManager private constructor(private val context: Application) {
         }
         withContext(Dispatchers.IO) {
             try {
-                if (outputStream == null) {
-                    throw IOException("打印机未连接")
-                }
+                ensureTransport()
 
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, align.toByte()))
@@ -766,9 +804,7 @@ class BtPrintManager private constructor(private val context: Application) {
     ) = withContext(Dispatchers.IO) {
         require(width > 0 && height > 0) { "打印图片的宽高必须大于 0，当前: ${width}x$height" }
         try {
-            if (outputStream == null) {
-                throw IOException("打印机未连接")
-            }
+            ensureTransport()
 
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, align.toByte()))
@@ -841,56 +877,20 @@ class BtPrintManager private constructor(private val context: Application) {
     }
 
     /**
-     * 检查蓝牙连接状态
+     * 检查打印机连接状态（SPP / BLE / TCP 通用）
      * 纯内存状态判断，不向打印机写入任何字节
      */
     suspend fun isConnected(): Boolean {
-        return bluetoothSocket?.isConnected == true && outputStream != null && connected
+        val t = transport ?: return false
+        return t.isConnected && connected
     }
 
     /**
-     * 重新连接蓝牙设备
+     * 重新连接蓝牙设备（经典 SPP）
      * 与 connect 相同的锁策略：连接期间不持写锁，并发打印快速失败
      */
-    @SuppressLint("MissingPermission")
-    suspend fun reconnect(device: BluetoothDevice) = withContext(Dispatchers.IO) {
-        connectMutex.withLock {
-            // 尚未发布的本地 socket：连接中途失败时负责关闭，避免 fd 泄漏
-            var pendingSocket: BluetoothSocket? = null
-            try {
-                // 先关闭现有连接
-                writeMutex.withLock { closeInternal() }
-
-                // 创建新的连接
-                val socket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
-                pendingSocket = socket
-                socket.connect()
-                val stream = socket.outputStream
-
-                // 测试连接是否有效（纯状态检查，不写字节）
-                if (socket.isConnected) {
-                    writeMutex.withLock {
-                        bluetoothSocket = socket
-                        outputStream = stream
-                        connected = true
-                        connectedDeviceAddress = device.address
-                        _connectedDevice.value = device
-                        pendingSocket = null
-                    }
-                    true
-                } else {
-                    closePendingSocket(pendingSocket)
-                    writeMutex.withLock { closeInternal() }
-                    false
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "重新连接失败", e)
-                closePendingSocket(pendingSocket)
-                writeMutex.withLock { closeInternal() }
-                false
-            }
-        }
-    }
+    suspend fun reconnect(device: BluetoothDevice): Boolean =
+        connectTransport(SppTransport(context, device, cancelDiscovery = false), TYPE_SPP, device.address)
 
     /**
      * 关闭连接（非挂起签名不变，Mutex tryLock 避免阻塞调用方）
@@ -912,18 +912,29 @@ class BtPrintManager private constructor(private val context: Application) {
      * 实际关闭逻辑（调用方需自行保证与 writeMutex 的互斥）
      */
     private fun closeInternal() {
+        val t = transport
+        transport = null
         try {
-            outputStream?.close()
-            bluetoothSocket?.close()
+            t?.close()
         } catch (e: Exception) {
             Log.e(TAG, "关闭连接失败", e)
         } finally {
-            outputStream = null
-            bluetoothSocket = null
             connected = false
             connectedDeviceAddress = null
             _connectedDevice.value = null
+            _connectionTarget.value = null
         }
+    }
+
+    /**
+     * 取出当前传输层并校验可用性，未连接时抛 [IOException]
+     */
+    private fun ensureTransport(): PrintTransport {
+        val t = transport
+        if (t == null || !t.isConnected || !connected) {
+            throw IOException("打印机未连接")
+        }
+        return t
     }
 
     /**
@@ -1010,11 +1021,7 @@ class BtPrintManager private constructor(private val context: Application) {
     private suspend fun write(data: ByteArray) = withContext(Dispatchers.IO) {
         writeMutex.withLock {
             try {
-                if (bluetoothSocket?.isConnected != true || outputStream == null || !connected) {
-                    throw IOException("打印机未连接")
-                }
-                outputStream?.write(data)
-                outputStream?.flush()
+                ensureTransport().write(data)
             } catch (e: Exception) {
                 Log.e(TAG, "写入数据失败", e)
                 closeInternal()

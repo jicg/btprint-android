@@ -2,9 +2,12 @@ package com.jicg.btprint
 
 import android.annotation.SuppressLint
 import android.app.Application
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.graphics.Bitmap
 import com.jicg.btprint.BtPrintManager.BarcodeType
+import com.jicg.btprint.transport.ConnectionTarget
+import com.jicg.btprint.transport.TcpTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -241,6 +244,66 @@ object PrintUtils {
      */
     fun disconnect() {
         getPrintManager().disconnect()
+    }
+
+    /**
+     * 当前连接目标（蓝牙设备或网络地址），未连接时为 null
+     */
+    val connectionTarget: StateFlow<ConnectionTarget?>
+        get() = getPrintManager().connectionTarget
+
+    /**
+     * 连接 BLE（低功耗蓝牙）打印机（异步）
+     */
+    fun connectBle(device: BluetoothDevice): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        return scope.launch {
+            val ok = try {
+                getPrintManager().connectBle(device)
+            } catch (e: Exception) {
+                if (debugMode) e.printStackTrace()
+                notifyResult("connectBle", false, e)
+                return@launch
+            }
+            notifyResult("connectBle", ok)
+        }
+    }
+
+    /**
+     * 连接 BLE 打印机（挂起）
+     * @return 是否连接成功
+     */
+    suspend fun connectBleWait(device: BluetoothDevice): Boolean {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        return getPrintManager().connectBle(device)
+    }
+
+    /**
+     * 连接网络打印机 Wi-Fi / 以太网，ESC/POS over TCP（异步）
+     * @param host 打印机 IP 或域名
+     * @param port 端口，默认 9100
+     */
+    fun connectTcp(host: String, port: Int = TcpTransport.DEFAULT_PORT): Job {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        return scope.launch {
+            val ok = try {
+                getPrintManager().connectTcp(host, port)
+            } catch (e: Exception) {
+                if (debugMode) e.printStackTrace()
+                notifyResult("connectTcp", false, e)
+                return@launch
+            }
+            notifyResult("connectTcp", ok)
+        }
+    }
+
+    /**
+     * 连接网络打印机（挂起）
+     * @return 是否连接成功
+     */
+    suspend fun connectTcpWait(host: String, port: Int = TcpTransport.DEFAULT_PORT): Boolean {
+        check(initialized) { "PrintUtils 未初始化，请先调用 PrintUtils.init(context)" }
+        return getPrintManager().connectTcp(host, port)
     }
 
     /**

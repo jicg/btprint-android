@@ -4,7 +4,8 @@
 
 ## 功能特性
 
-- **蓝牙连接**：SPP 连接 / 断开 / 重连 / 自动连接上次设备 / 连接状态检测
+- **连接方式**：经典蓝牙 SPP、BLE（低功耗蓝牙 GATT 透传）、Wi-Fi/以太网（ESC/POS over TCP，默认端口 9100）；连接/断开/重连/自动连接上次设备/连接状态检测
+- **传输层抽象**：`PrintTransport` 接口隔离传输与 ESC/POS 指令编排，可自定义扩展其他通道
 - **纸张宽度**：支持 58mm（32 字符/行）与 80mm（48 字符/行）小票机，可切换并持久化
 - **文本打印**：支持字号（小/中/大）、对齐方式（左/中/右）、多行换行
 - **排版打印**：两列 / 三列排版、分割线、标题（行宽随纸张与字号自动换算）
@@ -37,7 +38,7 @@ dependencyResolutionManagement {
 
 ```groovy
 dependencies {
-    implementation 'io.github.jicg:btprint-sdk:1.0.1'
+    implementation 'io.github.jicg:btprint-sdk:1.1.0'
 }
 ```
 
@@ -69,18 +70,27 @@ class MyApp : Application() {
 ### 2. 连接打印机
 
 ```kotlin
-// 方式一：自动连接上次使用的设备
+// 方式一：自动连接上次使用的设备（自动复现上次的连接类型：SPP / BLE / TCP）
 val ok = PrintUtils.autoConnectLastDevice()
 
-// 方式二：跳转 SDK 内置的设备连接页面
+// 方式二：跳转 SDK 内置的设备连接页面（按设备类型自动选择 SPP 或 BLE）
 startActivity(Intent(this, BtPrintActivity::class.java))
 
-// 方式三：手动连接指定设备
+// 方式三：手动连接经典蓝牙设备（SPP）
 val device: BluetoothDevice = ... // 通过 BtDeviceManager.getInstance(this).bondedDevices 获取
 lifecycleScope.launch {
     val ok = BtPrintManager.getInstance(this@YourActivity).connect(device)
 }
+
+// 方式四：连接 BLE 打印机（GATT 透传，自动适配常见透传 UUID）
+PrintUtils.connectBleWait(device)
+
+// 方式五：连接网络打印机（Wi-Fi / 以太网，ESC/POS over TCP）
+PrintUtils.connectTcpWait("192.168.1.100")            // 默认端口 9100
+PrintUtils.connectTcpWait("192.168.1.100", 9100)
 ```
+
+当前连接目标（设备或网络地址）可通过 `PrintUtils.connectionTarget` 观察。
 
 ### 3. 打印（异步 fire-and-forget 版）
 
@@ -167,5 +177,8 @@ PrintUtils.disconnect()
 - 二维码内容使用 US-ASCII 编码，仅支持英文/数字/符号，含中文会打印为 `?`
 - 图片打印建议使用黑白或高对比度图片，效果最佳
 - 各排版方法内部显式管理对齐方式，任务结束后恢复左对齐，连续调用不会因对齐状态残留而错位
+- BLE 通道按 MTU 分包写入（默认 20 字节，协商后最大 509），大图打印比 SPP 慢属正常现象；
+  已适配 FFE0/FFE1、FFE5/FFE9、Nordic UART、ISSC 等常见透传服务，未命中时兜底使用第一个可写 characteristic
+- 网络打印机需与手机在同一局域网，ESC/POS 指令通过 TCP 9100 端口发送
 - `BtPrintActivity` 的界面文案全部走字符串资源（`btp_` 前缀），宿主可通过同名资源覆写实现多语言
 - `PrintUtils` 内部持有独立协程作用域，`release()` 可释放资源

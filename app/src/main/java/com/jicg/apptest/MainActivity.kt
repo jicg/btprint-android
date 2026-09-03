@@ -199,6 +199,33 @@ class MainActivity : ComponentActivity() {
             }
         }.also { rootLayout.addView(it) }
 
+        // 网络打印机 IP 输入框
+        val hostEdit = android.widget.EditText(this).apply {
+            hint = "打印机 IP（如 192.168.1.100），默认端口 9100"
+        }
+        rootLayout.addView(hostEdit)
+
+        // 连接网络打印机按钮
+        Button(this).apply {
+            text = "连接网络打印机"
+            setOnClickListener {
+                val host = hostEdit.text.toString().trim()
+                if (host.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "请输入打印机 IP", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                lifecycleScope.launch {
+                    val ok = PrintUtils.connectTcpWait(host)
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (ok) "已连接网络打印机 $host" else "连接失败，请检查 IP 与网络",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    updateButtonState()
+                }
+            }
+        }.also { rootLayout.addView(it) }
+
         setContentView(rootLayout)
     }
 
