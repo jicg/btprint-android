@@ -38,10 +38,12 @@ android {
 }
 
 dependencies {
-    // 使用 api 暴露公共 API 依赖，保证宿主可访问 BtPrintActivity 等公开类型
-    api "androidx.core:core-ktx:1.12.0"
+    // 仅对公开 API 中出现的类型保留 api 依赖：
+    // activity-ktx（BtPrintActivity 继承 ComponentActivity）、kotlinx-coroutines（PrintUtils 返回 Job）
+    // core-ktx / lifecycle 仅内部使用（ContextCompat、lifecycleScope），用 implementation 避免强加给宿主编译类路径
+    implementation "androidx.core:core-ktx:1.12.0"
     api "androidx.activity:activity-ktx:1.8.0"
-    api "androidx.lifecycle:lifecycle-runtime-ktx:2.7.0"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.7.0"
     api 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
 

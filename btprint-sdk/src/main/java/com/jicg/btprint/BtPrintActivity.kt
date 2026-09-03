@@ -70,20 +70,20 @@ class BtPrintActivity : ComponentActivity() {
         val allGranted = result.values.all { it }
         if (allGranted) {
             updateStatus(
-                "准备就绪",
-                "点击下方按钮扫描附近的蓝牙打印机",
+                getString(R.string.btp_status_ready),
+                getString(R.string.btp_status_ready_detail),
                 R.color.btp_primary,
-                "未连接"
+                getString(R.string.btp_status_disconnected)
             )
             autoConnectLastDevice()
         } else {
             updateStatus(
-                "缺少蓝牙权限",
-                "无法扫描和连接设备，请在系统设置中授权",
+                getString(R.string.btp_status_permission_missing),
+                getString(R.string.btp_status_permission_detail),
                 R.color.btp_error,
-                "未连接"
+                getString(R.string.btp_status_disconnected)
             )
-            Toast.makeText(this, "需要蓝牙权限才能扫描和连接设备", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.btp_toast_permission_required, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -95,10 +95,10 @@ class BtPrintActivity : ComponentActivity() {
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             updateStatus(
-                "蓝牙已开启",
-                "点击下方按钮扫描附近的蓝牙打印机",
+                getString(R.string.btp_status_bt_enabled),
+                getString(R.string.btp_status_ready_detail),
                 R.color.btp_primary,
-                "未连接"
+                getString(R.string.btp_status_disconnected)
             )
             if (pendingScan) {
                 pendingScan = false
@@ -108,10 +108,10 @@ class BtPrintActivity : ComponentActivity() {
             }
         } else {
             updateStatus(
-                "未开启蓝牙",
-                "请在系统设置中开启蓝牙后重试",
+                getString(R.string.btp_status_bt_disabled),
+                getString(R.string.btp_status_bt_disabled_detail),
                 R.color.btp_error,
-                "未连接"
+                getString(R.string.btp_status_disconnected)
             )
         }
     }
@@ -132,20 +132,21 @@ class BtPrintActivity : ComponentActivity() {
         // 无蓝牙模块的设备（部分平板/模拟器）：给出提示并禁用扫描，避免 NPE 崩溃
         if (bluetoothAdapter == null) {
             updateStatus(
-                "设备不支持蓝牙",
-                "当前设备没有蓝牙模块，无法使用蓝牙打印",
+                getString(R.string.btp_status_no_bluetooth),
+                getString(R.string.btp_status_no_bluetooth_detail),
                 R.color.btp_error,
-                "不可用"
+                getString(R.string.btp_status_unavailable)
             )
             scanButton.isEnabled = false
             return
         }
 
-        // 检查蓝牙权限
-        checkBluetoothPermissions()
-
-        // 自动连接上次设备
-        autoConnectLastDevice()
+        // 串行流程：权限就绪后才自动连接，避免权限弹窗与 RFCOMM 连接同时进行
+        if (btDeviceManager.hasBluetoothPermission()) {
+            autoConnectLastDevice()
+        } else {
+            checkBluetoothPermissions()
+        }
     }
 
     private fun bindViews() {
@@ -191,7 +192,7 @@ class BtPrintActivity : ComponentActivity() {
         lifecycleScope.launch {
             btDeviceManager.isScanning.collect { scanning ->
                 scanButton.isEnabled = !scanning
-                scanButton.text = if (scanning) "扫描中..." else "扫描设备"
+                scanButton.text = getString(if (scanning) R.string.btp_scanning else R.string.btp_scan)
                 scanProgress.visibility = if (scanning) View.VISIBLE else View.GONE
                 if (!scanning) {
                     updateEmptyVisibility()
@@ -213,7 +214,9 @@ class BtPrintActivity : ComponentActivity() {
                         if (connected) R.color.btp_success else R.color.btp_text_secondary
                     )
                 )
-                titleStatus.text = if (connected) "已连接" else "未连接"
+                titleStatus.text = getString(
+                    if (connected) R.string.btp_status_connected else R.string.btp_status_disconnected
+                )
                 refreshDeviceRows()
             }
         }
@@ -260,10 +263,10 @@ class BtPrintActivity : ComponentActivity() {
         pendingScan = false
 
         updateStatus(
-            "正在扫描设备...",
-            "请确保打印机已开机并靠近手机",
+            getString(R.string.btp_status_scanning),
+            getString(R.string.btp_status_scanning_detail),
             R.color.btp_primary,
-            "未连接"
+            getString(R.string.btp_status_disconnected)
         )
         scanButton.isEnabled = false
 
@@ -282,10 +285,10 @@ class BtPrintActivity : ComponentActivity() {
         // 启动真实扫描
         if (!btDeviceManager.startScan()) {
             updateStatus(
-                "扫描启动失败",
-                "请检查蓝牙与权限设置",
+                getString(R.string.btp_status_scan_failed),
+                getString(R.string.btp_status_scan_failed_detail),
                 R.color.btp_error,
-                "未连接"
+                getString(R.string.btp_status_disconnected)
             )
             scanButton.isEnabled = true
         }
@@ -299,7 +302,8 @@ class BtPrintActivity : ComponentActivity() {
 
         val row = layoutInflater.inflate(R.layout.item_device, container, false)
         row.findViewById<TextView>(R.id.deviceName).text =
-            device.name?.takeIf { it.isNotBlank() } ?: "未知设备"
+            device.name?.takeIf { it.isNotBlank() } ?: getString(R.string.btp_unknown_device)
+
         row.findViewById<TextView>(R.id.deviceAddress).text = device.address
 
         row.setOnClickListener { connectToDevice(device) }
@@ -319,17 +323,17 @@ class BtPrintActivity : ComponentActivity() {
                 connectedAddress -> {
                     row.setBackgroundResource(R.drawable.bg_device_item_connected)
                     badge.setBackgroundResource(R.drawable.bg_badge_green)
-                    badge.text = "已连接"
+                    badge.text = getString(R.string.btp_status_connected)
                 }
                 connectingAddress -> {
                     row.setBackgroundResource(R.drawable.bg_device_item)
                     badge.setBackgroundResource(R.drawable.bg_badge_gray)
-                    badge.text = "连接中..."
+                    badge.text = getString(R.string.btp_badge_connecting)
                 }
                 else -> {
                     row.setBackgroundResource(R.drawable.bg_device_item)
                     badge.setBackgroundResource(R.drawable.bg_badge_primary)
-                    badge.text = "连接"
+                    badge.text = getString(R.string.btp_badge_connect)
                 }
             }
         }
@@ -338,17 +342,17 @@ class BtPrintActivity : ComponentActivity() {
     private fun connectToDevice(device: BluetoothDevice) {
         val address = device.address
         if (address == connectedAddress) {
-            Toast.makeText(this, "已连接该打印机", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.btp_toast_already_connected, Toast.LENGTH_SHORT).show()
             return
         }
         if (address == connectingAddress) return
 
-        val name = device.name?.takeIf { it.isNotBlank() } ?: "设备"
+        val name = device.name?.takeIf { it.isNotBlank() } ?: getString(R.string.btp_unknown_device)
         updateStatus(
-            "正在连接 $name...",
+            getString(R.string.btp_connecting_to, name),
             device.address,
             R.color.btp_warning,
-            "连接中"
+            getString(R.string.btp_status_connecting)
         )
         connectingAddress = address
         refreshDeviceRows()
@@ -360,21 +364,21 @@ class BtPrintActivity : ComponentActivity() {
             val connected = btPrintManager.connect(device)
             if (connected) {
                 updateStatus(
-                    "已连接：$name",
+                    getString(R.string.btp_connected_to, name),
                     device.address,
                     R.color.btp_success,
-                    "已连接"
+                    getString(R.string.btp_status_connected)
                 )
-                Toast.makeText(this@BtPrintActivity, "连接成功", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@BtPrintActivity, R.string.btp_toast_connect_success, Toast.LENGTH_SHORT).show()
             } else {
                 connectingAddress = null
                 updateStatus(
-                    "连接失败",
-                    "请确认打印机已开机且在范围内",
+                    getString(R.string.btp_toast_connect_failed),
+                    getString(R.string.btp_connect_failed_detail),
                     R.color.btp_error,
-                    "未连接"
+                    getString(R.string.btp_status_disconnected)
                 )
-                Toast.makeText(this@BtPrintActivity, "连接失败", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@BtPrintActivity, R.string.btp_toast_connect_failed, Toast.LENGTH_SHORT).show()
                 refreshDeviceRows()
             }
         }
@@ -390,12 +394,12 @@ class BtPrintActivity : ComponentActivity() {
         lifecycleScope.launch {
             if (btPrintManager.autoConnectLastDevice()) {
                 updateStatus(
-                    "已自动连接上次的打印机",
+                    getString(R.string.btp_toast_auto_connected),
                     btPrintManager.connectedDevice.value?.address ?: "",
                     R.color.btp_success,
-                    "已连接"
+                    getString(R.string.btp_status_connected)
                 )
-                Toast.makeText(this@BtPrintActivity, "已自动连接上次的打印机", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@BtPrintActivity, R.string.btp_toast_auto_connected, Toast.LENGTH_SHORT).show()
             }
         }
     }

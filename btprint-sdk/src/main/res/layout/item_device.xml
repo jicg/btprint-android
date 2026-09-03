@@ -19,7 +19,7 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:src="@drawable/ic_printer"
-        android:contentDescription="打印机" />
+        android:contentDescription="@string/btp_printer_icon" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -54,7 +54,7 @@
         android:id="@+id/deviceState"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="连接"
+        android:text="@string/btp_badge_connect"
         android:textSize="13sp"
         android:textColor="@color/btp_white"
         android:background="@drawable/bg_badge_primary"

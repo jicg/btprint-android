@@ -17,7 +17,9 @@ import androidx.lifecycle.lifecycleScope
 import com.jicg.btprint.BtPrintActivity
 import com.jicg.btprint.BtPrintManager
 import com.jicg.btprint.PrintUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private lateinit var btPrintButton: Button
@@ -29,22 +31,48 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
-                    try {
-                        // 从相册加载图片
-                        currentBitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
-                        imagePreview.setImageBitmap(currentBitmap)
-                        Toast.makeText(this, "图片加载成功", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "加载图片失败: ${e.message}", Toast.LENGTH_SHORT)
-                            .show()
+                    // 大图解码放 IO 线程并按打印宽度降采样，避免主线程 ANR
+                    lifecycleScope.launch {
+                        val bitmap = decodeSampledBitmap(uri, PRINT_IMAGE_TARGET_WIDTH)
+                        if (bitmap != null) {
+                            currentBitmap = bitmap
+                            imagePreview.setImageBitmap(bitmap)
+                            Toast.makeText(this@MainActivity, "图片加载成功", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@MainActivity, "加载图片失败", Toast.LENGTH_SHORT)
+                                .show()
+                        }
                     }
                 }
             }
         }
 
+    /**
+     * 按目标宽度解码并降采样（inSampleSize 取 2 的幂）
+     */
+    private suspend fun decodeSampledBitmap(uri: Uri, targetWidth: Int): Bitmap? =
+        withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= targetWidth) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
+        }
+
+    companion object {
+        /** 打印图片的目标宽度（58mm 纸宽 384 点），预览/打印共用同一张降采样后的位图 */
+        private const val PRINT_IMAGE_TARGET_WIDTH = 384
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        PrintUtils.init(this)
         currentBitmap = BitmapFactory.decodeResource(resources, R.mipmap.android)
 //        imagePreview.setImageResource(R.mipmap.android)
         // 尝试自动连接上次的设备

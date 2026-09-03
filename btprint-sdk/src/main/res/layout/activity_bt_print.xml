@@ -24,13 +24,13 @@
             android:layout_height="44dp"
             android:padding="10dp"
             android:src="@drawable/ic_arrow_back"
-            android:contentDescription="返回" />
+            android:contentDescription="@string/btp_back" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="蓝牙打印机"
+            android:text="@string/btp_title"
             android:textSize="18sp"
             android:textStyle="bold"
             android:textColor="@color/btp_text_primary" />
@@ -47,7 +47,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
-            android:text="未连接"
+            android:text="@string/btp_status_disconnected"
             android:textSize="13sp"
             android:textColor="@color/btp_text_secondary" />
     </LinearLayout>
@@ -76,7 +76,7 @@
                     android:id="@+id/statusText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="准备就绪"
+                    android:text="@string/btp_status_ready"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="@color/btp_text_primary" />
@@ -86,7 +86,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="点击下方按钮扫描附近的蓝牙打印机"
+                    android:text="@string/btp_status_ready_detail"
                     android:textSize="13sp"
                     android:textColor="@color/btp_text_secondary" />
             </LinearLayout>
@@ -97,7 +97,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
                 android:layout_marginTop="16dp"
-                android:text="扫描设备"
+                android:text="@string/btp_scan"
                 android:textSize="16sp"
                 android:textColor="@color/btp_white"
                 android:background="@drawable/bg_btn_primary_selector" />
@@ -119,7 +119,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:layout_marginBottom="8dp"
-                android:text="已配对设备"
+                android:text="@string/btp_group_bonded"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:textColor="@color/btp_text_secondary"
@@ -138,7 +138,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:layout_marginBottom="8dp"
-                android:text="附近设备"
+                android:text="@string/btp_group_nearby"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:textColor="@color/btp_text_secondary"
@@ -157,7 +157,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="36dp"
                 android:gravity="center"
-                android:text="未发现设备，点击上方按钮开始扫描"
+                android:text="@string/btp_empty_hint"
                 android:textSize="14sp"
                 android:textColor="@color/btp_text_secondary" />
 

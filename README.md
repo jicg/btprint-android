@@ -107,11 +107,34 @@ lifecycleScope.launch {
 }
 ```
 
-### 5. 断开连接
+### 5. 任务队列与结果监听
+
+`PrintUtils` 内部维护严格 FIFO 的打印队列，异步版 API（`printText` 等）入队后立即返回 `Job`；
+打印完成/失败通过监听器回调（运行在 IO 线程，UI 更新需自行切主线程）：
+
+```kotlin
+PrintUtils.setPrintResultListener { result ->
+    if (!result.success) {
+        Log.e("Print", "${result.taskType} 失败", result.error)
+    }
+}
+
+PrintUtils.queueSize.collect { size -> /* 队列中待执行任务数 */ }
+PrintUtils.clearQueue()        // 清空未执行任务；中断进行中的打印用 clearQueue() + disconnect()
+PrintUtils.cancelPrint(job)    // 仅对尚未出队的任务有效
+```
+
+未连接打印机时任务会立即失败并回调 `success = false`（异常为 `IOException("打印机未连接")`），
+不会出现"没打印却报成功"的情况。
+
+### 6. 断开连接
 
 ```kotlin
 PrintUtils.disconnect()
 ```
+
+> 连接（`connect`/`reconnect`）与打印使用独立的锁：连接进行期间入队的打印任务会快速失败，
+> 而不会阻塞等待 RFCOMM 连接完成。
 
 ## 常用常量
 
@@ -143,4 +166,6 @@ PrintUtils.disconnect()
 - SDK 使用 GBK 编码发送文本，适配国内主流 58mm / 80mm 热敏打印机（`setPaperWidth` 切换）
 - 二维码内容使用 US-ASCII 编码，仅支持英文/数字/符号，含中文会打印为 `?`
 - 图片打印建议使用黑白或高对比度图片，效果最佳
+- 各排版方法内部显式管理对齐方式，任务结束后恢复左对齐，连续调用不会因对齐状态残留而错位
+- `BtPrintActivity` 的界面文案全部走字符串资源（`btp_` 前缀），宿主可通过同名资源覆写实现多语言
 - `PrintUtils` 内部持有独立协程作用域，`release()` 可释放资源

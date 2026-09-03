@@ -154,6 +154,10 @@ object PrintUtils {
                 val task = channel.receiveCatching().getOrNull() ?: break
                 try {
                     task()
+                } catch (e: Exception) {
+                    // 未知异常（如外部经 enqueue 提交的自定义任务）不能杀死消费协程，
+                    // 否则后续任务永远得不到执行
+                    if (debugMode) e.printStackTrace()
                 } finally {
                     _queueSize.value = (_queueSize.value - 1).coerceAtLeast(0)
                 }
