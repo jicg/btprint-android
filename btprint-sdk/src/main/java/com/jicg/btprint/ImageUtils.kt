@@ -26,7 +26,12 @@ object ImageUtils {
             Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
         } catch (e: Exception) {
             Log.e(TAG, "压缩图片失败", e)
-            bitmap
+            // 回退原图时保证像素格式可读：HARDWARE 配置的位图无法 getPixels
+            if (bitmap.config == Bitmap.Config.HARDWARE) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+            } else {
+                bitmap
+            }
         }
     }
 

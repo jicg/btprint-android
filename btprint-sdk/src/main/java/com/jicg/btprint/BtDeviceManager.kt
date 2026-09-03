@@ -123,9 +123,8 @@ class BtDeviceManager private constructor(private val context: Application) {
             return false
         }
         val adapter = bluetoothAdapter ?: return false
-        if (adapter.isDiscovering) {
-            adapter.cancelDiscovery()
-        }
+        // 停止上一轮扫描并注销旧 receiver，避免重复 startScan 时 receiver 泄漏
+        stopScan()
         discoveredAddresses.clear()
         _discoveredDevices.value = emptyList()
 
@@ -148,7 +147,8 @@ class BtDeviceManager private constructor(private val context: Application) {
                         }
                     }
                     BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
-                        _isScanning.value = false
+                        // 扫描自然结束后注销 receiver（单例常驻进程，不注销会逐个泄漏）
+                        stopScan()
                         Log.i(TAG, "扫描结束")
                     }
                 }

@@ -523,9 +523,9 @@ object PrintUtils {
         dividerLength: Int = 32
     ) {
         val manager = getPrintManager()
-//        manager.printDivider(dividerChar, dividerLength)
+        manager.printDivider(dividerChar, dividerLength)
         manager.printText(text, fontSize, align, 1)
-//        manager.printDivider(dividerChar, dividerLength)
+        manager.printDivider(dividerChar, dividerLength)
     }
 
     /**
@@ -536,7 +536,9 @@ object PrintUtils {
     }
 
     /**
-     * 释放 Job
+     * 取消打印任务
+     * 注意：仅对尚未出队执行的任务有效；任务一旦开始执行（或已出队）无法通过此 Job 中断，
+     * 如需中断进行中的打印请使用 clearQueue() + disconnect()
      */
     fun cancelPrint(job: Job?) {
         job?.cancel()

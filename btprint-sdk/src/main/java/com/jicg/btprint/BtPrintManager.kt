@@ -114,6 +114,15 @@ class BtPrintManager private constructor(private val context: Application) {
     suspend fun connect(device: BluetoothDevice): Boolean = withContext(Dispatchers.IO) {
         writeMutex.withLock {
             try {
+                // 扫描会显著拖慢甚至导致 RFCOMM 连接失败，连接前先停止扫描
+                try {
+                    bluetoothAdapter?.takeIf { it.isDiscovering }?.cancelDiscovery()
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "取消扫描失败: 缺少蓝牙权限", e)
+                }
+                // 先关闭旧连接，避免已连接状态下重复 connect 泄漏旧 socket
+                //（多数热敏打印机仅支持 1 路 SPP 连接，旧连接不释放会导致新连接失败）
+                closeInternal()
                 bluetoothSocket = device.createRfcommSocketToServiceRecord(UUID.fromString(SPP_UUID))
                 bluetoothSocket?.connect()
                 outputStream = bluetoothSocket?.outputStream
@@ -213,6 +222,7 @@ class BtPrintManager private constructor(private val context: Application) {
         require(fontSize in setOf(FONT_SIZE_SMALL, FONT_SIZE_NORMAL, FONT_SIZE_LARGE)) {
             "Invalid font size value: $fontSize"
         }
+        require(feedLines >= 0) { "Invalid feed lines value: $feedLines" }
 
         withContext(Dispatchers.IO) {
             try {
@@ -282,15 +292,15 @@ class BtPrintManager private constructor(private val context: Application) {
                 else -> 0x33
             }.toByte()))
             write(byteArrayOf(ESC, 0x4D, 0))
-            // 设置对齐方式
-            write(byteArrayOf(ESC, 0x61, 1.toByte()))
+            // 两列排版依赖手动补空格，左对齐语义最准确（居中会让超宽兜底的两行都居中）
+            write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
             // 计算实际字符宽度（考虑中文字符）
             val getCharWidth = { str: String ->
                 str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
             }
 
-            // 计算总宽度（假设打印机每行32个字符）
-            val totalWidth = 32
+            // 行宽按字号换算：大字体为倍宽模式，一行只能容纳一半字符
+            val totalWidth = if (fontSize == FONT_SIZE_LARGE) 16 else 32
             val text1Width = getCharWidth(text1)
             val text2Width = getCharWidth(text2)
 
@@ -341,9 +351,9 @@ class BtPrintManager private constructor(private val context: Application) {
                     str.sumOf { if (it.code > 127) 2L else 1L }.toInt()
                 }
 
-                // 打印机参数
-                val WIDTH_PIXEL = 32  // 打印机总宽度
-                val WIDTH_PIXEL_MID = 16  // 中间区域宽度
+                // 打印机参数（行宽按字号换算：大字体为倍宽模式，一行只能容纳一半字符）
+                val WIDTH_PIXEL = if (fontSize == FONT_SIZE_LARGE) 16 else 32  // 打印机总宽度
+                val WIDTH_PIXEL_MID = WIDTH_PIXEL / 2  // 中间区域宽度
                 val SpaceLength = 1  // 空格宽度
 
                 // 计算各列文本宽度
@@ -372,8 +382,8 @@ class BtPrintManager private constructor(private val context: Application) {
                     val rightSize = (size - leftSize).coerceAtLeast(0)
                     result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
                 } else {
-                    // 常规空格分配
-                    val leftSize = (size * (WIDTH_PIXEL_MID / WIDTH_PIXEL)).coerceAtLeast(0)
+                    // 常规空格分配（先乘后除：Int 除法 WIDTH_PIXEL_MID / WIDTH_PIXEL 恒为 0）
+                    val leftSize = (size * WIDTH_PIXEL_MID / WIDTH_PIXEL).coerceAtLeast(0)
                     val rightSize = (size - leftSize).coerceAtLeast(0)
                     result += " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
                 }
@@ -450,12 +460,13 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(29, 40, 107, 3, 0, 49, 69, height.coerceIn(1, 16).toByte()))
 
             // 创建二维码数据命令
+            // pL/pH = (dataLength + 3) 的小端拆分，必须整体计算再拆分，避免 pL 进位丢失
             val command = ByteArray(dataLength + 8)
             command[0] = 29  // GS
             command[1] = 40  // (
             command[2] = 107 // k
-            command[3] = (dataLength % 256 + 3).toByte()
-            command[4] = (dataLength / 256).toByte()
+            command[3] = ((dataLength + 3) % 256).toByte()
+            command[4] = ((dataLength + 3) / 256).toByte()
             command[5] = 49  // 1
             command[6] = 80  // P
             command[7] = 48  // 0
@@ -598,8 +609,8 @@ class BtPrintManager private constructor(private val context: Application) {
     /**
      * 打印图片
      * @param bitmap 图片
-     * @param width 宽度
-     * @param height 高度
+     * @param width 目标宽度（像素），自动按 8 点向上对齐
+     * @param height 保留参数，暂未使用；实际高度始终按图片宽高比推导
      * @param align 对齐方式
      */
     suspend fun printImage(
@@ -618,13 +629,13 @@ class BtPrintManager private constructor(private val context: Application) {
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, align.toByte()))
 
-            // 计算每行字节数（8个点一个字节）
-            val bytesPerLine = (width + 7) / 8 * 8
+            // 目标宽度：按 8 点（1 字节）向上取整
+            val targetWidthPx = (width + 7) / 8 * 8
             // 计算实际高度（保持宽高比）
-            val actualHeight = bitmap.height * bytesPerLine / bitmap.width
+            val actualHeight = bitmap.height * targetWidthPx / bitmap.width
 
             // 压缩图片
-            val compressedBitmap = ImageUtils.compressBitmap(bitmap, bytesPerLine, actualHeight)
+            val compressedBitmap = ImageUtils.compressBitmap(bitmap, targetWidthPx, actualHeight)
             // 使用抖动算法处理图片
             val buffer = ImageUtils.ditherImage(compressedBitmap)
 
@@ -633,39 +644,34 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(ESC, 0x33, 0))
 
             // 发送 GS v 0 命令
+            // 包头尺寸以实际产出的位图为准：compressBitmap 失败回退原图时也能保持头/数据一致
+            val bytesPerLine = (compressedBitmap.width + 7) / 8
+            val imageHeight = compressedBitmap.height
             val command = byteArrayOf(
                 GS, 0x76, 0x30, 0,  // GS v 0 命令
-                (bytesPerLine / 8 % 256).toByte(),  // 宽度低字节
-                (bytesPerLine / 8 / 256).toByte(),  // 宽度高字节
-                (actualHeight % 256).toByte(),      // 高度低字节
-                (actualHeight / 256).toByte()       // 高度高字节
+                (bytesPerLine % 256).toByte(),  // 宽度低字节（单位：字节）
+                (bytesPerLine / 256).toByte(),  // 宽度高字节
+                (imageHeight % 256).toByte(),   // 高度低字节（单位：点）
+                (imageHeight / 256).toByte()    // 高度高字节
             )
             write(command)
 
-            // 创建缓存
+            // 分块写入图片数据（8KB 缓存，避免一次性拷贝整个 buffer）
             val cacheSize = 1024 * 8 // 8KB 缓存
             val cache = ByteArrayOutputStream(cacheSize)
-
-            // 写入图片数据
             val totalBytes = buffer.size
             var currentPosition = 0
 
             while (currentPosition < totalBytes) {
-                // 计算当前行可用的字节数
-                val remainingBytes = totalBytes - currentPosition
-                val bytesToWrite = minOf(bytesPerLine, remainingBytes)
+                val bytesToWrite = minOf(cacheSize - cache.size(), totalBytes - currentPosition)
+                cache.write(buffer, currentPosition, bytesToWrite)
+                currentPosition += bytesToWrite
 
-                // 复制当前行的数据
-                val lineData = buffer.copyOfRange(currentPosition, currentPosition + bytesToWrite)
-                cache.write(lineData)
-
-                // 当缓存达到一定大小时写入
+                // 缓存满即写入
                 if (cache.size() >= cacheSize) {
                     write(cache.toByteArray())
                     cache.reset()
                 }
-
-                currentPosition += bytesToWrite
             }
 
             // 写入剩余的缓存数据
