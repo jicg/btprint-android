@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
  */
 class BtPrintActivity : ComponentActivity() {
     private lateinit var bluetoothManager: BluetoothManager
-    private lateinit var bluetoothAdapter: BluetoothAdapter
+    private var bluetoothAdapter: BluetoothAdapter? = null
     private lateinit var btPrintManager: BtPrintManager
     private lateinit var btDeviceManager: BtDeviceManager
 
@@ -128,6 +128,18 @@ class BtPrintActivity : ComponentActivity() {
 
         bindViews()
         observeDeviceStates()
+
+        // 无蓝牙模块的设备（部分平板/模拟器）：给出提示并禁用扫描，避免 NPE 崩溃
+        if (bluetoothAdapter == null) {
+            updateStatus(
+                "设备不支持蓝牙",
+                "当前设备没有蓝牙模块，无法使用蓝牙打印",
+                R.color.btp_error,
+                "不可用"
+            )
+            scanButton.isEnabled = false
+            return
+        }
 
         // 检查蓝牙权限
         checkBluetoothPermissions()
@@ -233,7 +245,7 @@ class BtPrintActivity : ComponentActivity() {
     }
 
     private fun checkBluetoothEnabled(): Boolean {
-        if (!bluetoothAdapter.isEnabled) {
+        if (bluetoothAdapter?.isEnabled != true) {
             enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
             return false
         }

@@ -62,17 +62,26 @@ class MainActivity : ComponentActivity() {
             setPadding(16, 16, 16, 16)
         }
 
-        // 创建蓝牙打印按钮
+        // 创建蓝牙打印按钮（未连接时跳转连接页，已连接时断开）
         btPrintButton = Button(this).apply {
             text = "蓝牙打印"
             setOnClickListener {
-                // 跳转到蓝牙打印界面
-                startActivity(
-                    Intent(
-                        this@MainActivity,
-                        BtPrintActivity::class.java
-                    )
-                )
+                lifecycleScope.launch {
+                    if (PrintUtils.isConnected()) {
+                        PrintUtils.disconnect()
+                        Toast.makeText(this@MainActivity, "已断开打印机", Toast.LENGTH_SHORT)
+                            .show()
+                        updateButtonState()
+                    } else {
+                        // 跳转到蓝牙打印界面
+                        startActivity(
+                            Intent(
+                                this@MainActivity,
+                                BtPrintActivity::class.java
+                            )
+                        )
+                    }
+                }
             }
         }
         rootLayout.addView(btPrintButton)
@@ -177,21 +186,6 @@ class MainActivity : ComponentActivity() {
             btPrintButton.text = "断开打印"
         } else {
             btPrintButton.text = "蓝牙打印"
-        }
-    }
-
-    private fun connectPrinter() {
-        lifecycleScope.launch {
-            try {
-                val intent = Intent(this@MainActivity, BtPrintActivity::class.java)
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(
-                    this@MainActivity,
-                    "启动打印界面失败: ${e.message}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
         }
     }
 }

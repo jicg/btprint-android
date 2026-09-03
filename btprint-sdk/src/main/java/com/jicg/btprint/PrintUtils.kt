@@ -5,13 +5,6 @@ import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import com.jicg.btprint.BtPrintManager.BarcodeType
-import com.jicg.btprint.BtPrintManager.Companion.ALIGN_CENTER
-import com.jicg.btprint.BtPrintManager.Companion.ALIGN_LEFT
-import com.jicg.btprint.BtPrintManager.Companion.ALIGN_RIGHT
-import com.jicg.btprint.BtPrintManager.Companion.CHARSET_GBK
-import com.jicg.btprint.BtPrintManager.Companion.FONT_SIZE_LARGE
-import com.jicg.btprint.BtPrintManager.Companion.FONT_SIZE_NORMAL
-import com.jicg.btprint.BtPrintManager.Companion.FONT_SIZE_SMALL
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +35,21 @@ data class PrintResult(
  * 统一对外提供打印 API
  */
 object PrintUtils {
+    // ============ 从 BtPrintManager 重导出的常用常量（门面一站式使用） ============
+    const val FONT_SIZE_SMALL = BtPrintManager.FONT_SIZE_SMALL    // 小字体
+    const val FONT_SIZE_NORMAL = BtPrintManager.FONT_SIZE_NORMAL  // 正常字体
+    const val FONT_SIZE_LARGE = BtPrintManager.FONT_SIZE_LARGE    // 大字体
+
+    const val ALIGN_LEFT = BtPrintManager.ALIGN_LEFT
+    const val ALIGN_CENTER = BtPrintManager.ALIGN_CENTER
+    const val ALIGN_RIGHT = BtPrintManager.ALIGN_RIGHT
+
+    const val CUT_FULL = BtPrintManager.CUT_FULL        // 全切
+    const val CUT_PARTIAL = BtPrintManager.CUT_PARTIAL  // 半切（留连接点）
+
+    /** GBK 编码（与 BtPrintManager 同一实例） */
+    val CHARSET_GBK = BtPrintManager.CHARSET_GBK
+
     /**
      * 应用上下文（仅持有进程级 Application，生命周期与进程一致，无内存泄漏风险）
      * 注意：不要将 Activity/Service 等短生命周期 Context 存入此处
@@ -545,6 +553,53 @@ object PrintUtils {
         manager.printDivider(dividerChar, dividerLength)
         manager.printText(text, fontSize, align, 1)
         manager.printDivider(dividerChar, dividerLength)
+    }
+
+    /**
+     * 切纸（异步，先走纸再切刀；无切刀的机型会忽略切刀命令）
+     * @param mode CUT_FULL 全切 / CUT_PARTIAL 半切（留连接点）
+     * @param feedLines 切纸前走纸行数
+     */
+    fun cutPaper(mode: Int = CUT_PARTIAL, feedLines: Int = 3): Job {
+        return enqueue {
+            try {
+                getPrintManager().cutPaper(mode, feedLines)
+                notifyResult("cutPaper", true)
+            } catch (e: Exception) {
+                if (debugMode) e.printStackTrace()
+                notifyResult("cutPaper", false, e)
+            }
+        }
+    }
+
+    /**
+     * 切纸（挂起）
+     */
+    suspend fun cutPaperWait(mode: Int = CUT_PARTIAL, feedLines: Int = 3) {
+        getPrintManager().cutPaper(mode, feedLines)
+    }
+
+    /**
+     * 打开钱箱（异步，仅带钱箱接口的机型有效）
+     * @param pin 钱箱引脚：0=2 号引脚，1=5 号引脚
+     */
+    fun openCashDrawer(pin: Int = 0): Job {
+        return enqueue {
+            try {
+                getPrintManager().openCashDrawer(pin)
+                notifyResult("openCashDrawer", true)
+            } catch (e: Exception) {
+                if (debugMode) e.printStackTrace()
+                notifyResult("openCashDrawer", false, e)
+            }
+        }
+    }
+
+    /**
+     * 打开钱箱（挂起）
+     */
+    suspend fun openCashDrawerWait(pin: Int = 0) {
+        getPrintManager().openCashDrawer(pin)
     }
 
     /**

@@ -57,6 +57,10 @@ class BtPrintManager private constructor(private val context: Application) {
         const val ALIGN_CENTER: Int = 0x01
         const val ALIGN_RIGHT: Int = 0x02
 
+        // 切纸模式
+        const val CUT_FULL = 0     // 全切
+        const val CUT_PARTIAL = 1  // 半切（留连接点）
+
         const val ESC: Byte = 0x1B
         const val GS: Byte = 0x1D
 
@@ -470,6 +474,61 @@ class BtPrintManager private constructor(private val context: Application) {
             Log.e(TAG, "打印分割线失败", e)
         }
     }
+
+    /**
+     * 切纸（先走纸再切刀；无切刀的机型会忽略切刀命令）
+     * @param mode CUT_FULL 全切 / CUT_PARTIAL 半切（留连接点）
+     * @param feedLines 切纸前走纸行数，避免最后一段内容被切刀裁到
+     */
+    suspend fun cutPaper(mode: Int = CUT_PARTIAL, feedLines: Int = 3) =
+        withContext(Dispatchers.IO) {
+            require(mode == CUT_FULL || mode == CUT_PARTIAL) { "Invalid cut mode: $mode" }
+            require(feedLines >= 0) { "Invalid feed lines value: $feedLines" }
+            try {
+                if (outputStream == null) {
+                    Log.e(TAG, "蓝牙未连接，无法切纸")
+                    return@withContext
+                }
+                if (feedLines > 0) {
+                    write(ByteArray(feedLines) { FEED_LINE.toByte() })
+                }
+                // GS V m：m=0 全切，m=1 半切
+                write(byteArrayOf(GS, 0x56, mode.toByte()))
+                Log.d(TAG, "切纸命令已发送: mode=$mode")
+            } catch (e: Exception) {
+                Log.e(TAG, "切纸失败: ${e.message}")
+                throw e
+            }
+        }
+
+    /**
+     * 打开钱箱（向钱箱接口输出脉冲，仅带钱箱接口的机型有效）
+     * @param pin 钱箱引脚：0=2 号引脚，1=5 号引脚
+     * @param onTime 脉冲开启时间（单位 2ms，1-255）
+     * @param offTime 脉冲关闭时间（单位 2ms，1-255）
+     */
+    suspend fun openCashDrawer(pin: Int = 0, onTime: Int = 25, offTime: Int = 250) =
+        withContext(Dispatchers.IO) {
+            require(pin in 0..1) { "Invalid cash drawer pin: $pin" }
+            try {
+                if (outputStream == null) {
+                    Log.e(TAG, "蓝牙未连接，无法开钱箱")
+                    return@withContext
+                }
+                // ESC p m t1 t2
+                write(
+                    byteArrayOf(
+                        ESC, 0x70, pin.toByte(),
+                        onTime.coerceIn(1, 255).toByte(),
+                        offTime.coerceIn(1, 255).toByte()
+                    )
+                )
+                Log.d(TAG, "开钱箱命令已发送: pin=$pin")
+            } catch (e: Exception) {
+                Log.e(TAG, "开钱箱失败: ${e.message}")
+                throw e
+            }
+        }
 
     /**
      * 打印二维码
