@@ -37,7 +37,7 @@ dependencyResolutionManagement {
 
 ```groovy
 dependencies {
-    implementation 'io.github.jicg:btprint-sdk:1.0.0'
+    implementation 'io.github.jicg:btprint-sdk:1.0.1'
 }
 ```
 
