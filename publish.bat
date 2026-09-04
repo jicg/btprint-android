@@ -39,12 +39,19 @@ if not exist "%OUT%" mkdir "%OUT%"
 echo [3/5] Collecting files to %OUT% ...
 copy /y "%SRC%\outputs\aar\btprint-sdk-release.aar"                  "%OUT%\btprint-sdk-%VERSION%.aar"            >nul
 copy /y "%SRC%\publications\maven\pom-default.xml"                   "%OUT%\btprint-sdk-%VERSION%.pom"            >nul
-copy /y "%SRC%\libs\btprint-sdk-%VERSION%-sources.jar"               "%OUT%\btprint-sdk-%VERSION%-sources.jar"     >nul
+rem vanniktech 0.32 的 sources jar 输出在 intermediates\source_jar，不在 build\libs
+copy /y "%SRC%\intermediates\source_jar\release\release-sources.jar" "%OUT%\btprint-sdk-%VERSION%-sources.jar"  >nul
 copy /y "%SRC%\intermediates\java_doc_jar\release\release-javadoc.jar" "%OUT%\btprint-sdk-%VERSION%-javadoc.jar" >nul
-copy /y "%SRC%\publications\maven\module.json"                       "%OUT%\btprint-sdk-%VERSION%.module"          >nul
+rem Gradle 模块元数据仅在发布到仓库时生成，手动上传模式非必需，存在才拷贝
+if exist "%SRC%\publications\maven\module.json" copy /y "%SRC%\publications\maven\module.json" "%OUT%\btprint-sdk-%VERSION%.module" >nul
 
 if not exist "%OUT%\btprint-sdk-%VERSION%.aar" (
     echo [ERROR] AAR artifact not found, check build output
+    exit /b 1
+)
+rem sources.jar 是 Maven Central 的强制要求，缺失必须中断而不是静默产出缺件包
+if not exist "%OUT%\btprint-sdk-%VERSION%-sources.jar" (
+    echo [ERROR] Sources artifact not found, required by Maven Central, check build output
     exit /b 1
 )
 
