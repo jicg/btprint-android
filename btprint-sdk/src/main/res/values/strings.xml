@@ -47,4 +47,25 @@
     <string name="btp_connecting_to">正在连接 %1$s…</string>
     <string name="btp_connected_to">已连接：%1$s</string>
     <string name="btp_connect_failed_detail">请确认打印机已开机且在范围内</string>
+
+    <!-- WiFi 连接页 -->
+    <string name="wfp_title">WiFi 打印机</string>
+    <string name="wfp_status_ready">准备就绪</string>
+    <string name="wfp_status_ready_detail">输入打印机 IP 连接，或点击下方按钮扫描局域网</string>
+    <string name="wfp_status_scanning">正在扫描局域网…</string>
+    <string name="wfp_status_scanning_detail">请确保打印机已开机并与手机在同一网络</string>
+    <string name="wfp_hint_host">打印机 IP（如 192.168.1.100）</string>
+    <string name="wfp_hint_port">端口</string>
+    <string name="wfp_connect">连接</string>
+    <string name="wfp_disconnect">断开连接</string>
+    <string name="wfp_scan">扫描局域网打印机</string>
+    <string name="wfp_scanning">扫描中…</string>
+    <string name="wfp_scan_progress">已扫描 %1$d/%2$d</string>
+    <string name="wfp_scan_done">扫描完成，发现 %1$d 台打印机</string>
+    <string name="wfp_group_found">发现的打印机</string>
+    <string name="wfp_empty_hint">未发现打印机，可尝试手动输入 IP 连接</string>
+    <string name="wfp_invalid_host">请输入有效的打印机 IP</string>
+    <string name="wfp_printer_name">网络打印机</string>
+    <string name="wfp_connecting_detail">正在建立 TCP 连接，请稍候</string>
+    <string name="wfp_connect_failed_detail">请确认 IP 与端口正确、打印机在线且与手机在同一局域网</string>
 </resources>

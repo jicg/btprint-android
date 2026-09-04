@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/btp_bg">
+
+    <!-- 顶部标题栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/btp_card_bg"
+        android:elevation="2dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
+
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:padding="10dp"
+            android:src="@drawable/ic_arrow_back"
+            android:contentDescription="@string/btp_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/wfp_title"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/btp_text_primary" />
+
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@drawable/bg_dot"
+            android:backgroundTint="@color/btp_text_secondary" />
+
+        <TextView
+            android:id="@+id/titleStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="@string/btp_status_disconnected"
+            android:textSize="13sp"
+            android:textColor="@color/btp_text_secondary" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- 状态卡片 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/statusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/wfp_status_ready"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/btp_text_primary" />
+
+                <TextView
+                    android:id="@+id/statusDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/wfp_status_ready_detail"
+                    android:textSize="13sp"
+                    android:textColor="@color/btp_text_secondary" />
+            </LinearLayout>
+
+            <!-- 手动连接卡片 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/hostEdit"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:layout_weight="1"
+                        android:hint="@string/wfp_hint_host"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:imeOptions="actionDone" />
+
+                    <EditText
+                        android:id="@+id/portEdit"
+                        android:layout_width="110dp"
+                        android:layout_height="52dp"
+                        android:layout_marginStart="12dp"
+                        android:hint="@string/wfp_hint_port"
+                        android:inputType="number"
+                        android:maxLines="1" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/connectButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/wfp_connect"
+                    android:textSize="16sp"
+                    android:textColor="@color/btp_white"
+                    android:background="@drawable/bg_btn_primary_selector" />
+            </LinearLayout>
+
+            <!-- 断开连接（仅已连接时显示） -->
+            <Button
+                android:id="@+id/disconnectButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="12dp"
+                android:text="@string/wfp_disconnect"
+                android:visibility="gone" />
+
+            <!-- 扫描按钮 -->
+            <Button
+                android:id="@+id/scanButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/wfp_scan"
+                android:textSize="16sp"
+                android:textColor="@color/btp_white"
+                android:background="@drawable/bg_btn_primary_selector" />
+
+            <!-- 扫描进度条 -->
+            <ProgressBar
+                android:id="@+id/scanProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:indeterminate="true"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/progressText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/btp_text_secondary"
+                android:visibility="gone" />
+
+            <!-- 发现的打印机分组 -->
+            <TextView
+                android:id="@+id/groupFoundTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/wfp_group_found"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/btp_text_secondary"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/foundListLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- 空状态提示 -->
+            <TextView
+                android:id="@+id/emptyView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="36dp"
+                android:gravity="center"
+                android:text="@string/wfp_empty_hint"
+                android:textSize="14sp"
+                android:textColor="@color/btp_text_secondary" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="24dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

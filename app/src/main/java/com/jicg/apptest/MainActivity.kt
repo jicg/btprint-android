@@ -7,22 +7,29 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.View
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.jicg.btprint.BtPrintActivity
-import com.jicg.btprint.BtPrintManager
 import com.jicg.btprint.PrintUtils
+import com.jicg.btprint.WifiPrintActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-    private lateinit var btPrintButton: Button
+    private lateinit var modeRadio: RadioGroup
+    private lateinit var btEntryButton: Button
+    private lateinit var wifiEntryButton: Button
+    private lateinit var disconnectButton: Button
     private lateinit var printTestButton: Button
     private lateinit var imagePreview: ImageView
     private var currentBitmap: Bitmap? = null
@@ -74,8 +81,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentBitmap = BitmapFactory.decodeResource(resources, R.mipmap.android)
-//        imagePreview.setImageResource(R.mipmap.android)
-        // 尝试自动连接上次的设备
+        // 尝试自动连接上次的设备（按上次成功时的类型：蓝牙 / WiFi）
         lifecycleScope.launch {
             if (PrintUtils.autoConnectLastDevice()) {
                 Toast.makeText(this@MainActivity, "已自动连接上次的打印机", Toast.LENGTH_SHORT)
@@ -90,29 +96,62 @@ class MainActivity : ComponentActivity() {
             setPadding(16, 16, 16, 16)
         }
 
-        // 创建蓝牙打印按钮（未连接时跳转连接页，已连接时断开）
-        btPrintButton = Button(this).apply {
-            text = "蓝牙打印"
+        // 打印方式配置：蓝牙 / WiFi / 两者都支持，选中即持久化
+        rootLayout.addView(TextView(this).apply {
+            text = "打印方式"
+            textSize = 14f
+        })
+        modeRadio = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+        }
+        val modes = listOf(
+            PrintMode.BLUETOOTH to "蓝牙打印",
+            PrintMode.WIFI to "WiFi 打印",
+            PrintMode.BOTH to "两者都支持"
+        )
+        modes.forEach { (mode, label) ->
+            modeRadio.addView(RadioButton(this).apply {
+                text = label
+                id = mode.ordinal
+                textSize = 14f
+            })
+        }
+        modeRadio.check(PrintModeStore.get(this).ordinal)
+        modeRadio.setOnCheckedChangeListener { _, checkedId ->
+            val mode = PrintMode.entries.firstOrNull { it.ordinal == checkedId } ?: return@setOnCheckedChangeListener
+            PrintModeStore.set(this@MainActivity, mode)
+            updateEntryVisibility(mode)
+        }
+        rootLayout.addView(modeRadio)
+
+        // 蓝牙打印机入口（跳转蓝牙连接配置页）
+        btEntryButton = Button(this).apply {
+            text = "蓝牙打印机"
             setOnClickListener {
-                lifecycleScope.launch {
-                    if (PrintUtils.isConnected()) {
-                        PrintUtils.disconnect()
-                        Toast.makeText(this@MainActivity, "已断开打印机", Toast.LENGTH_SHORT)
-                            .show()
-                        updateButtonState()
-                    } else {
-                        // 跳转到蓝牙打印界面
-                        startActivity(
-                            Intent(
-                                this@MainActivity,
-                                BtPrintActivity::class.java
-                            )
-                        )
-                    }
-                }
+                startActivity(Intent(this@MainActivity, BtPrintActivity::class.java))
             }
         }
-        rootLayout.addView(btPrintButton)
+        rootLayout.addView(btEntryButton)
+
+        // WiFi 打印机入口（跳转 WiFi 连接配置页：手动 IP / 局域网扫描）
+        wifiEntryButton = Button(this).apply {
+            text = "WiFi 打印机"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, WifiPrintActivity::class.java))
+            }
+        }
+        rootLayout.addView(wifiEntryButton)
+
+        // 断开当前连接（仅已连接时显示）
+        disconnectButton = Button(this).apply {
+            text = "断开连接"
+            visibility = View.GONE
+            setOnClickListener {
+                PrintUtils.disconnect()
+                lifecycleScope.launch { updateButtonState() }
+            }
+        }
+        rootLayout.addView(disconnectButton)
 
         // 创建打印测试按钮
         printTestButton = Button(this).apply {
@@ -147,10 +186,9 @@ class MainActivity : ComponentActivity() {
                             PrintUtils.printBarCodeWait("12312312312312")
                             PrintUtils.printTextWait("")
                             PrintUtils.printTextWait(
-                                "测试撒测测试测试测试测试撒测测试测试测试测试撒测\n测试测、试测试测试撒测测试测试。测试测试撒测测试测试测试",
+                                "测试撒测测试测试测试撒测测试测试测试测试撒测\n测试测、试测试测试撒测测试测试。测试测试撒测测试测试测试",
                                 fontSize = 0
                             )
-                            PrintUtils.printTextWait("")
                             PrintUtils.printTextWait("")
                             PrintUtils.printTextWait("")
                             PrintUtils.printTextWait("")
@@ -199,34 +237,8 @@ class MainActivity : ComponentActivity() {
             }
         }.also { rootLayout.addView(it) }
 
-        // 网络打印机 IP 输入框
-        val hostEdit = android.widget.EditText(this).apply {
-            hint = "打印机 IP（如 192.168.1.100），默认端口 9100"
-        }
-        rootLayout.addView(hostEdit)
-
-        // 连接网络打印机按钮
-        Button(this).apply {
-            text = "连接网络打印机"
-            setOnClickListener {
-                val host = hostEdit.text.toString().trim()
-                if (host.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "请输入打印机 IP", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                lifecycleScope.launch {
-                    val ok = PrintUtils.connectTcpWait(host)
-                    Toast.makeText(
-                        this@MainActivity,
-                        if (ok) "已连接网络打印机 $host" else "连接失败，请检查 IP 与网络",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    updateButtonState()
-                }
-            }
-        }.also { rootLayout.addView(it) }
-
         setContentView(rootLayout)
+        updateEntryVisibility(PrintModeStore.get(this))
     }
 
     override fun onResume() {
@@ -236,11 +248,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 按打印方式控制两个配置页入口的显隐
+     */
+    private fun updateEntryVisibility(mode: PrintMode) {
+        btEntryButton.visibility = if (mode == PrintMode.WIFI) View.GONE else View.VISIBLE
+        wifiEntryButton.visibility = if (mode == PrintMode.BLUETOOTH) View.GONE else View.VISIBLE
+    }
+
     private suspend fun updateButtonState() {
-        if (PrintUtils.isConnected()) {
-            btPrintButton.text = "断开打印"
-        } else {
-            btPrintButton.text = "蓝牙打印"
-        }
+        disconnectButton.visibility =
+            if (PrintUtils.isConnected()) View.VISIBLE else View.GONE
     }
 }

@@ -13,9 +13,17 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- 网络打印机（WiFi / 以太网，ESC/POS over TCP）与局域网扫描 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application>
         <activity
             android:name="com.jicg.btprint.BtPrintActivity"
+            android:exported="false"
+            android:theme="@style/Theme.BtPrint" />
+        <activity
+            android:name="com.jicg.btprint.WifiPrintActivity"
             android:exported="false"
             android:theme="@style/Theme.BtPrint" />
     </application>
