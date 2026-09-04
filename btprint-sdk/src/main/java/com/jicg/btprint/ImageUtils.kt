@@ -3,6 +3,7 @@ package com.jicg.btprint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.os.Build
 import android.util.Log
 
 /**
@@ -22,8 +23,11 @@ object ImageUtils {
         require(targetWidth > 0 && targetHeight > 0) {
             "targetWidth 和 targetHeight 必须大于 0，当前: ${targetWidth}x$targetHeight"
         }
-        // HARDWARE 配置的位图无法被 createScaledBitmap/getPixels 读取，先转为可读的 ARGB_8888
-        val source = if (bitmap.config == Bitmap.Config.HARDWARE) {
+        // HARDWARE 配置的位图无法被 createScaledBitmap/getPixels 读取，先转为可读的 ARGB_8888。
+        // HARDWARE 常量本身是 API 26 才存在，低版本引用会 NoSuchFieldError，必须先做版本门槛
+        val source = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            bitmap.config == Bitmap.Config.HARDWARE
+        ) {
             bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
         } else {
             bitmap
