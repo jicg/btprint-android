@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import java.util.UUID
@@ -173,6 +174,8 @@ class BleTransport(
             val end = minOf(offset + chunkSize, data.size)
             writeChunk(data.copyOfRange(offset, end))
             offset = end
+            // 无响应写拿不到回执，块间主动 pacing，避免打印机 BLE FIFO 溢出丢包
+            if (noResponse && offset < data.size) delay(PACING_MS)
         }
     }
 
@@ -259,6 +262,8 @@ class BleTransport(
         private const val TAG = "BleTransport"
         private const val MAX_MTU = 512
         private const val MIN_CHUNK = 20
+        /** 无响应写的块间节流间隔，防止打印机 BLE FIFO 溢出 */
+        private const val PACING_MS = 5L
 
         /** 常见透传服务 -> 写特征 */
         private val TRANSPARENT_UUIDS: List<Pair<UUID, UUID>> = listOf(

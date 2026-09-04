@@ -203,7 +203,6 @@ class BtPrintActivity : ComponentActivity() {
         // 连接状态：标题栏圆点 + 设备行高亮（不覆盖主状态文本，避免与扫描/连接提示冲突）
         lifecycleScope.launch {
             btPrintManager.connectedDevice.collect { device ->
-                btDeviceManager.setConnectedDevice(device)
                 connectedAddress = device?.address
                 connectingAddress = null
 

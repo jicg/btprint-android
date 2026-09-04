@@ -30,8 +30,11 @@ class BtDeviceManager private constructor(private val context: Application) {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    private val _connectedDevice = MutableStateFlow<BluetoothDevice?>(null)
-    val connectedDevice: StateFlow<BluetoothDevice?> = _connectedDevice.asStateFlow()
+    /**
+     * 当前连接的设备（委托 BtPrintManager 的统一状态，避免两份数据手动同步）
+     */
+    val connectedDevice: StateFlow<BluetoothDevice?>
+        get() = BtPrintManager.getInstance(context).connectedDevice
 
     private var discoveryReceiver: BroadcastReceiver? = null
     private val discoveredAddresses = HashSet<String>()
@@ -103,10 +106,12 @@ class BtDeviceManager private constructor(private val context: Application) {
     }
 
     /**
-     * 设置当前连接的设备（由调用方订阅 BtPrintManager.connectedDevice 后同步）
+     * 设置当前连接的设备（已废弃：connectedDevice 直接委托 BtPrintManager，
+     * 订阅方会自动收到最新状态，无需手动同步）
      */
+    @Deprecated("connectedDevice 已委托 BtPrintManager，无需手动同步")
     fun setConnectedDevice(device: BluetoothDevice?) {
-        _connectedDevice.value = device
+        // no-op：状态由 BtPrintManager.connectedDevice 统一持有
     }
 
     /**

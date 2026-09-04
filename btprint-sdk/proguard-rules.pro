@@ -9,3 +9,11 @@
 -keep public class com.jicg.btprint.BtDeviceManager { *; }
 -keep public class com.jicg.btprint.ImageUtils { *; }
 -keep public class com.jicg.btprint.BtPrintActivity { *; }
+# 传输层公开类型（ConnectionTarget 出现在 PrintUtils.connectionTarget 返回值中，
+# 宿主可能实现 PrintTransport 自定义通道），混淆会导致宿主编译/运行断裂
+-keep public class com.jicg.btprint.transport.PrintTransport { *; }
+-keep public class com.jicg.btprint.transport.ConnectionTarget { *; }
+-keep public class com.jicg.btprint.transport.ConnectionTarget$* { *; }
+-keep public class com.jicg.btprint.transport.SppTransport { *; }
+-keep public class com.jicg.btprint.transport.BleTransport { *; }
+-keep public class com.jicg.btprint.transport.TcpTransport { *; }

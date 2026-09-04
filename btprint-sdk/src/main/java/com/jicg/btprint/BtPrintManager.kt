@@ -17,15 +17,18 @@ import com.jicg.btprint.transport.PrintTransport
 import com.jicg.btprint.transport.SppTransport
 import com.jicg.btprint.transport.TcpTransport
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.charset.Charset
+import java.util.concurrent.Executors
 
 /**
  * 蓝牙打印管理器
@@ -284,6 +287,10 @@ class BtPrintManager private constructor(private val context: Application) {
      * @param underline 下划线 (0-1)
      * @return 0:成功, 1:宽度参数错误, 2:高度参数错误, 3:粗体参数错误, 4:下划线参数错误
      */
+    @Deprecated(
+        message = "setFont 的字号/粗体设置会残留在打印机状态里，与 printText 内部的字体命令冲突，打印效果不可预期；" +
+            "请改用 printText 的 fontSize / bold 参数（每次打印自带设置与恢复）"
+    )
     suspend fun setFont(width: Int, height: Int, bold: Int, underline: Int): Int =
         withContext(Dispatchers.IO) {
             try {
@@ -323,21 +330,17 @@ class BtPrintManager private constructor(private val context: Application) {
      * @param fontSize 字体大小 (0:小字体, 1:正常字体, 2:大字体)
      * @param align 对齐方式
      * @param feedLines 换行数
+     * @param bold 粗体，仅对本次文本生效（任务末尾自动恢复，不影响后续打印）
      */
     suspend fun printText(
         text: String,
         fontSize: Int = FONT_SIZE_NORMAL,
         align: Int = ALIGN_LEFT,
-        feedLines: Int = 1
+        feedLines: Int = 1,
+        bold: Boolean = false
     ) {
         // 参数校验在协程切换之前执行，避免校验异常在 IO 线程抛出
-        require(
-            align in setOf(
-                ALIGN_LEFT,
-                ALIGN_CENTER, ALIGN_RIGHT
-            )
-        )
-        {
+        require(align in setOf(ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT)) {
             "Invalid alignment value: $align"
         }
         require(fontSize in setOf(FONT_SIZE_SMALL, FONT_SIZE_NORMAL, FONT_SIZE_LARGE)) {
@@ -371,6 +374,11 @@ class BtPrintManager private constructor(private val context: Application) {
                         }
                     }
 
+                    // 粗体（ESC E），仅对本次文本生效，字号命令在前不受影响
+                    if (bold) {
+                        write(byteArrayOf(27, 0x45, 0x01))
+                    }
+
                     // 写入文本（提取GBK编码为常量）
                     write(text.toByteArray(CHARSET_GBK))
 
@@ -378,12 +386,17 @@ class BtPrintManager private constructor(private val context: Application) {
                     repeat(feedLines) {
                         write(0x0A) // 使用换行符
                     }
+
+                    // 恢复粗体设置（ESC E 会保持生效直到显式关闭），避免泄漏到后续打印任务
+                    if (bold) {
+                        write(byteArrayOf(27, 0x45, 0x00))
+                    }
                 }
 
                 // 单次IO写入操作
                 write(outputBuffer.toByteArray())
 
-                Log.d(TAG, "打印成功: ${text.take(20)}...") // 截断长文本
+                Log.d(TAG, "打印文本成功 (${text.length} 字符)")
             } catch (e: Exception) {
                 Log.e(TAG, "打印失败 | 错误类型: ${e.javaClass.simpleName} | 详情: ${e.message}")
                 throw e // 根据需求决定是否抛出
@@ -479,7 +492,7 @@ class BtPrintManager private constructor(private val context: Application) {
                 write(lines.joinToString("\n").toByteArray(CHARSET_GBK))
                 // 换行
                 write(byteArrayOf(FEED_LINE.toByte()))
-                Log.d(TAG, "打印三列文本成功: $text1 | $text2 | $text3")
+                Log.d(TAG, "打印三列文本成功")
             } catch (e: Exception) {
                 Log.e(TAG, "打印三列文本失败: ${e.message}")
                 e.printStackTrace()
@@ -528,6 +541,26 @@ class BtPrintManager private constructor(private val context: Application) {
             " ".repeat(leftSize) + text2 + " ".repeat(rightSize) + text3
         }
         return if (leftDropped) listOf(text1, line) else listOf(text1 + line)
+    }
+
+    /**
+     * 打印标题（分割线 + 标题 + 分割线，三步作为一次调用，不被其他打印任务插入打断）
+     * @param text 标题文本
+     * @param fontSize 字体大小，默认大字体
+     * @param align 对齐方式，默认居中
+     * @param dividerChar 分割线字符
+     * @param dividerLength 分割线长度（字符数）；传 -1（默认）时自动使用当前纸宽的整行字符数
+     */
+    suspend fun printTitle(
+        text: String,
+        fontSize: Int = FONT_SIZE_LARGE,
+        align: Int = ALIGN_CENTER,
+        dividerChar: String = "=",
+        dividerLength: Int = -1
+    ) {
+        printDivider(dividerChar, dividerLength)
+        printText(text, fontSize, align, 1)
+        printDivider(dividerChar, dividerLength)
     }
 
     /**
@@ -667,7 +700,7 @@ class BtPrintManager private constructor(private val context: Application) {
             // 恢复左对齐，防止居中对齐残留到后续任务
             write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
 
-            Log.d(TAG, "打印二维码成功: $text")
+            Log.d(TAG, "打印二维码成功 (${data.size} 字节)")
         } catch (e: Exception) {
             Log.e(TAG, "打印二维码失败: ${e.message}")
             e.printStackTrace()
@@ -693,6 +726,41 @@ class BtPrintManager private constructor(private val context: Application) {
     ) {
         require(align in setOf(ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT)) {
             "Invalid alignment value: $align"
+        }
+        // 参数校验在协程切换之前执行，避免校验异常在 IO 线程抛出；
+        // 按条码类型校验内容格式，非法内容直接拒绝，避免向打印机发送无效命令
+        require(text.isNotEmpty()) { "条码内容不能为空" }
+        require(text.length <= 255) { "条码内容过长（最大 255 字符）" }
+        when (barcodeType) {
+            BarcodeType.EAN13 ->
+                require(text.matches(Regex("\\d{13}"))) { "EAN-13 条码必须是 13 位数字" }
+
+            BarcodeType.EAN8 ->
+                require(text.matches(Regex("\\d{8}"))) { "EAN-8 条码必须是 8 位数字" }
+
+            BarcodeType.UPC_A ->
+                require(text.matches(Regex("\\d{12}"))) { "UPC-A 条码必须是 12 位数字" }
+
+            BarcodeType.UPC_E ->
+                require(text.matches(Regex("\\d{8}"))) { "UPC-E 条码必须是 8 位数字" }
+
+            BarcodeType.ITF -> {
+                require(text.all { it.isDigit() }) { "ITF 条码只能包含数字" }
+                require(text.length % 2 == 0) { "ITF 条码长度必须为偶数" }
+            }
+
+            BarcodeType.CODE39 ->
+                require(text.matches(Regex("[0-9A-Z $%+\\-./]+"))) {
+                    "CODE39 条码只能包含数字、大写字母和空格 \$ % + - . /"
+                }
+
+            BarcodeType.CODABAR ->
+                require(text.matches(Regex("[0-9A-D $+\\-/:.]+"))) {
+                    "CODABAR 条码只能包含数字、A-D 和空格 \$ + - / : ."
+                }
+
+            BarcodeType.CODE128, BarcodeType.ONE_CODE93 ->
+                require(text.all { it.code in 0..127 }) { "条码内容必须是 ASCII 字符（0-127）" }
         }
         withContext(Dispatchers.IO) {
             try {
@@ -772,7 +840,7 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(27, 100, 1))
             write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
 
-            Log.d(TAG, "打印条形码成功: $text")
+            Log.d(TAG, "打印条形码成功 (${data.size} 字节)")
         } catch (e: Exception) {
             Log.e(TAG, "打印条形码失败: ${e.message}")
             e.printStackTrace()
@@ -799,25 +867,25 @@ class BtPrintManager private constructor(private val context: Application) {
     /**
      * 打印图片
      * @param bitmap 图片
-     * @param width 目标宽度（像素），自动按 8 点向上对齐
+     * @param width 目标宽度（像素），自动按 8 点向上对齐；传 0（默认）时按当前纸宽打印
      * @param height 保留参数，暂未使用；实际高度始终按图片宽高比推导
      * @param align 对齐方式
      */
     suspend fun printImage(
         bitmap: Bitmap,
-        width: Int = 200,
+        width: Int = 0,
         height: Int = 200,
         align: Int = ALIGN_CENTER.toInt()
     ) = withContext(Dispatchers.IO) {
-        require(width > 0 && height > 0) { "打印图片的宽高必须大于 0，当前: ${width}x$height" }
         try {
             ensureTransport()
 
             // 设置对齐方式
             write(byteArrayOf(ESC, 0x61, align.toByte()))
 
-            // 目标宽度：钳制在当前纸宽的可打印点数内，再按 8 点（1 字节）向上取整
-            val targetWidthPx = (width.coerceAtMost(paperWidth.dotsPerLine) + 7) / 8 * 8
+            // 目标宽度：width<=0 时取当前纸宽；钳制在可打印点数内，再按 8 点（1 字节）向上取整
+            val requestedWidth = if (width <= 0) paperWidth.dotsPerLine else width
+            val targetWidthPx = (requestedWidth.coerceAtMost(paperWidth.dotsPerLine) + 7) / 8 * 8
             // 计算实际高度（保持宽高比）
             val actualHeight = bitmap.height * targetWidthPx / bitmap.width
 
@@ -1023,12 +1091,36 @@ class BtPrintManager private constructor(private val context: Application) {
     }
 
     /**
+     * 单次写入超时时间（毫秒，默认 10 秒）。
+     * 超时视为连接故障：当前连接被关闭并抛出 [IOException]，避免坏死的 socket 永久冻结打印队列
+     */
+    @Volatile
+    var writeTimeoutMs: Long = 10_000
+
+    /**
+     * 专用写入线程：阻塞式 socket 写入统一在此线程执行，超时时可连同该线程一起放弃；
+     * 连接被关闭后，阻塞中的线程会因 socket 关闭而解除阻塞，随后被线程池回收
+     */
+    private val writeDispatcher = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "btprint-write").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+
+    /**
      * 写入数据（Mutex 串行化，保证并发打印时命令不交错）
      */
     private suspend fun write(data: ByteArray) = withContext(Dispatchers.IO) {
         writeMutex.withLock {
             try {
-                ensureTransport().write(data)
+                // 阻塞式写入放到专用线程执行，withTimeoutOrNull 负责超时兜底：
+                // 超时说明连接已坏死但 socket 没有报错，关闭连接让后续任务走重连路径
+                val completed = withTimeoutOrNull(writeTimeoutMs) {
+                    withContext(writeDispatcher) {
+                        ensureTransport().write(data)
+                    }
+                }
+                if (completed == null) {
+                    throw IOException("写入超时（${writeTimeoutMs}ms），连接已关闭")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "写入数据失败", e)
                 closeInternal()

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 /**
  * 打印结果
@@ -72,6 +73,21 @@ object PrintUtils {
      */
     @Volatile
     private var queueChannel: Channel<suspend () -> Unit>? = null
+
+    /**
+     * 打印队列容量上限（默认 100）。
+     * 队列满时入队任务立即失败并通过结果回调通知，避免无界排队撑爆内存；
+     * 修改对已运行的队列不生效，在下次重建队列（clearQueue / release / init）时生效
+     */
+    @Volatile
+    private var maxQueueSize: Int = 100
+
+    /**
+     * 设置打印队列容量上限（至少为 1）
+     */
+    fun setMaxQueueSize(size: Int) {
+        maxQueueSize = size.coerceAtLeast(1)
+    }
     private val _queueSize = MutableStateFlow(0)
 
     /**
@@ -149,7 +165,7 @@ object PrintUtils {
      * 启动队列消费者协程（严格 FIFO 顺序执行任务）
      */
     private fun startQueueConsumer() {
-        val channel = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+        val channel = Channel<suspend () -> Unit>(maxOf(1, maxQueueSize))
         queueChannel = channel
         scope.launch {
             // 队列被 clearQueue/release 替换（queueChannel 变更）时退出，丢弃剩余 pending 任务
@@ -203,11 +219,18 @@ object PrintUtils {
             val channel = queueChannel
             if (channel != null) {
                 _queueSize.value++
-                try {
-                    channel.send(task)
-                } catch (e: Exception) {
-                    // 队列已被 clearQueue/release 关闭：回滚计数，任务丢弃属预期行为
+                // trySend 非阻塞：队列满时立即失败，避免生产快于打印时无界排队撑爆内存
+                val result = channel.trySend(task)
+                if (result.isFailure) {
                     _queueSize.value = (_queueSize.value - 1).coerceAtLeast(0)
+                    if (result.exceptionOrNull() == null) {
+                        // 队列已满（非关闭）：任务被丢弃，通过回调通知调用方
+                        notifyResult(
+                            "enqueue", false,
+                            IOException("打印队列已满（上限 $maxQueueSize），任务被丢弃")
+                        )
+                    }
+                    // 队列已被 clearQueue/release 关闭：任务丢弃属预期行为，静默处理
                 }
             }
         }
@@ -334,16 +357,18 @@ object PrintUtils {
      * @param fontSize 字体大小
      * @param align 对齐方式
      * @param feedLines 换行数
+     * @param bold 粗体，仅对本次文本生效
      */
     fun printText(
         text: String,
         fontSize: Int = FONT_SIZE_NORMAL,
         align: Int = ALIGN_LEFT,
-        feedLines: Int = 1
+        feedLines: Int = 1,
+        bold: Boolean = false
     ): Job {
         return enqueue {
             try {
-                getPrintManager().printText(text, fontSize, align, feedLines)
+                getPrintManager().printText(text, fontSize, align, feedLines, bold)
                 notifyResult("printText", true)
             } catch (e: Exception) {
                 if (debugMode) e.printStackTrace()
@@ -354,14 +379,16 @@ object PrintUtils {
 
     /**
      * 打印文本（挂起）
+     * @param bold 粗体，仅对本次文本生效
      */
     suspend fun printTextWait(
         text: String,
         fontSize: Int = FONT_SIZE_NORMAL,
         align: Int = ALIGN_LEFT,
-        feedLines: Int = 1
+        feedLines: Int = 1,
+        bold: Boolean = false
     ) {
-        getPrintManager().printText(text, fontSize, align, feedLines)
+        getPrintManager().printText(text, fontSize, align, feedLines, bold)
     }
 
     /**
@@ -551,7 +578,11 @@ object PrintUtils {
     /**
      * 打印图片
      */
-    fun printImage(bitmap: Bitmap, width: Int = 200, height: Int = 200, align: Int = ALIGN_CENTER): Job {
+    /**
+     * 打印图片
+     * @param width 目标宽度（像素），传 0（默认）时按当前纸宽打印
+     */
+    fun printImage(bitmap: Bitmap, width: Int = 0, height: Int = 200, align: Int = ALIGN_CENTER): Job {
         return enqueue {
             try {
                 getPrintManager().printImage(bitmap, width, height, align)
@@ -565,10 +596,11 @@ object PrintUtils {
 
     /**
      * 打印图片（挂起）
+     * @param width 目标宽度（像素），传 0（默认）时按当前纸宽打印
      */
     suspend fun printImageWait(
         bitmap: Bitmap,
-        width: Int = 200,
+        width: Int = 0,
         height: Int = 200,
         align: Int = ALIGN_CENTER
     ) {
@@ -610,10 +642,7 @@ object PrintUtils {
     ): Job {
         return enqueue {
             try {
-                val manager = getPrintManager()
-                manager.printDivider(dividerChar, dividerLength)
-                manager.printText(text, fontSize, align, 1)
-                manager.printDivider(dividerChar, dividerLength)
+                getPrintManager().printTitle(text, fontSize, align, dividerChar, dividerLength)
                 notifyResult("printTitle", true)
             } catch (e: Exception) {
                 if (debugMode) e.printStackTrace()
@@ -633,10 +662,7 @@ object PrintUtils {
         dividerChar: String = "=",
         dividerLength: Int = -1
     ) {
-        val manager = getPrintManager()
-        manager.printDivider(dividerChar, dividerLength)
-        manager.printText(text, fontSize, align, 1)
-        manager.printDivider(dividerChar, dividerLength)
+        getPrintManager().printTitle(text, fontSize, align, dividerChar, dividerLength)
     }
 
     /**
