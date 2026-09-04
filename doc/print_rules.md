@@ -121,7 +121,9 @@ printTwo(text1, text2, fontSize)
 
 ### 4.2 表格模式（columnWrapEnabled = true）
 
-放得下时与默认模式一致；超宽时**列内折行**，规则：
+放得下（判定条件 `w1 + 1 + w2 ≤ totalWidth`，列间至少留 1 个空格，比默认模式严格：
+恰好铺满 `w1 + w2 = totalWidth` 时默认模式输出单行、表格模式会折行）时与默认模式一致；
+超宽时**列内折行**，规则：
 
 - **仅左列超宽**：左列折行，右列留在第一行。左列折行宽度 = `totalWidth - 间距 - w2`
   （即第一折宽度），后续每折不超过它；
@@ -194,7 +196,8 @@ printTitle(text, ...)        // 分割线 + 大字体居中文本 + 分割线
 | cutPaper / openCashDrawer | 不变 | 不变 |
 
 即：**对齐是每次排版方法自管的，跨任务不会错位；字号是持续状态**，
-大字号打印后记得用下一次 printText 的 fontSize 或 `setFont` 调整。
+大字号打印后记得在下一次 printText 时通过 fontSize 指定字号（`setFont` 已废弃，
+其字号/粗体残留会污染后续打印）。
 
 ## 8. 常见坑速查
 

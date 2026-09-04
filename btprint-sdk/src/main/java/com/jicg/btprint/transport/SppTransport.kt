@@ -54,10 +54,41 @@ class SppTransport(
             } catch (closeError: Exception) {
                 Log.w(TAG, "关闭失败 socket 出错", closeError)
             }
+            // 部分国产打印机 SDP 记录不完整，service-record 方式连不上但 RFCOMM channel 1 直连可用
+            val fallback = connectRfcommChannel(1)
+            if (fallback != null) {
+                socket = fallback
+                outputStream = fallback.outputStream
+                return
+            }
             throw e
         }
         socket = s
         outputStream = s.outputStream
+    }
+
+    /**
+     * 反射按 RFCOMM 通道号直连（隐藏 API，部分系统版本被限制），失败返回 null
+     */
+    private fun connectRfcommChannel(channel: Int): BluetoothSocket? = try {
+        val method = BluetoothDevice::class.java.getMethod(
+            "createRfcommSocket", Int::class.javaPrimitiveType
+        )
+        val socket = method.invoke(device, channel) as BluetoothSocket
+        try {
+            socket.connect()
+            socket
+        } catch (e: IOException) {
+            try {
+                socket.close()
+            } catch (closeError: Exception) {
+                Log.w(TAG, "关闭 fallback socket 出错", closeError)
+            }
+            null
+        }
+    } catch (t: Throwable) {
+        // 隐藏 API 被系统禁用时反射直接失败，走正常连接失败流程即可
+        null
     }
 
     override suspend fun write(data: ByteArray) {

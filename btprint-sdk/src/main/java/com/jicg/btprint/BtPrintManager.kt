@@ -81,6 +81,9 @@ class BtPrintManager private constructor(private val context: Application) {
         val CHARSET_GBK = Charset.forName("GBK")
         val FEED_LINE: Int = 0x0A
 
+        /** 图片打印像素上限（按缩放后的打印尺寸计）：抖动处理峰值内存 ≈ 12 字节/像素，超出拒绝打印 */
+        const val MAX_PRINT_PIXELS = 2_000_000
+
         @Synchronized
         fun getInstance(context: Context): BtPrintManager {
             if (instance == null) {
@@ -218,6 +221,21 @@ class BtPrintManager private constructor(private val context: Application) {
         connectTransport(TcpTransport(host, port), TYPE_TCP, "$host:$port")
 
     /**
+     * 连接超时时间（毫秒，默认 20 秒）。
+     * 部分机型 RFCOMM 的 connect() 没有系统超时且协程取消无法打断，超时后传输层被关闭并返回失败，
+     * 阻塞中的连接线程由 close() 解除
+     */
+    @Volatile
+    var connectTimeoutMs: Long = 20_000
+
+    /**
+     * 专用连接线程：阻塞式 connect 统一在此执行，超时时可连同线程一起放弃
+     */
+    private val connectDispatcher = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "btprint-connect").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+
+    /**
      * 传输层统一连接入口：串行化连接、互斥发布、失败收尾
      */
     private suspend fun connectTransport(
@@ -232,8 +250,17 @@ class BtPrintManager private constructor(private val context: Application) {
                 t.onDisconnected = { handleUnexpectedDisconnect() }
                 // 先关闭旧连接，避免重复连接泄漏旧通道
                 writeMutex.withLock { closeInternal() }
-                // 建立连接期间不持写锁，期间到达的打印任务会快速失败
-                t.connect()
+                // 阻塞式 connect 放到专用线程并加超时兜底：超时时 pending.close() 会
+                // 让阻塞中的 connect 抛出退出，不会冻结后续所有连接与打印
+                val established = withTimeoutOrNull(connectTimeoutMs) {
+                    withContext(connectDispatcher) { t.connect() }
+                }
+                if (established == null) {
+                    Log.e(TAG, "连接打印机超时（${connectTimeoutMs}ms）")
+                    pending?.close()
+                    writeMutex.withLock { closeInternal() }
+                    return@withContext false
+                }
                 // 发布新连接：与写入互斥，避免写入方读到半初始化的通道
                 writeMutex.withLock {
                     transport = t
@@ -878,16 +905,25 @@ class BtPrintManager private constructor(private val context: Application) {
         align: Int = ALIGN_CENTER.toInt()
     ) = withContext(Dispatchers.IO) {
         try {
-            ensureTransport()
-
-            // 设置对齐方式
-            write(byteArrayOf(ESC, 0x61, align.toByte()))
-
             // 目标宽度：width<=0 时取当前纸宽；钳制在可打印点数内，再按 8 点（1 字节）向上取整
             val requestedWidth = if (width <= 0) paperWidth.dotsPerLine else width
             val targetWidthPx = (requestedWidth.coerceAtMost(paperWidth.dotsPerLine) + 7) / 8 * 8
             // 计算实际高度（保持宽高比）
             val actualHeight = bitmap.height * targetWidthPx / bitmap.width
+
+            // 打印前像素上限校验：抖动处理峰值内存 ≈ 12 字节/像素，超出直接拒绝（不发送任何字节），
+            // 避免低端机 OOM 崩溃；提示调用方压缩图片后重打
+            val pixels = targetWidthPx.toLong() * actualHeight
+            if (pixels > MAX_PRINT_PIXELS) {
+                throw IllegalArgumentException(
+                    "图片过大（打印尺寸约 ${targetWidthPx}x$actualHeight，超过 $MAX_PRINT_PIXELS 像素），请压缩后再打印"
+                )
+            }
+
+            ensureTransport()
+
+            // 设置对齐方式
+            write(byteArrayOf(ESC, 0x61, align.toByte()))
 
             // 压缩图片
             val compressedBitmap = ImageUtils.compressBitmap(bitmap, targetWidthPx, actualHeight)
@@ -899,7 +935,7 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(ESC, 0x33, 0))
 
             // 发送 GS v 0 命令
-            // 包头尺寸以实际产出的位图为准：compressBitmap 失败回退原图时也能保持头/数据一致
+            // 包头尺寸以实际产出的位图为准（compressBitmap 失败会整体抛错，不存在尺寸不一致的回退路径）
             val bytesPerLine = (compressedBitmap.width + 7) / 8
             val imageHeight = compressedBitmap.height
             val command = byteArrayOf(
@@ -944,6 +980,10 @@ class BtPrintManager private constructor(private val context: Application) {
             write(byteArrayOf(ESC, 0x61, ALIGN_LEFT.toByte()))
 
             Log.d(TAG, "打印图片成功")
+        } catch (oom: OutOfMemoryError) {
+            // 像素上限之外的极端内存压力（如整机内存不足）：任务失败而不是崩掉进程
+            Log.e(TAG, "打印图片失败: 内存不足", oom)
+            throw IOException("打印图片内存不足，请压缩图片后重试")
         } catch (e: Exception) {
             Log.e(TAG, "打印图片失败: ${e.message}")
             e.printStackTrace()

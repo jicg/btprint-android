@@ -63,16 +63,20 @@ internal object ColumnLayout {
         val rightTooLong = wr > rightBudget
 
         if (leftTooLong && !rightTooLong) {
-            // 仅左列超行：左列折行，右列留在第一行
-            return wrap(left, leftBudget).mapIndexed { i, seg ->
-                if (i == 0) seg + spaces(leftBudget - textWidth(seg)) + spaces(g) + right
+            // 仅左列超行：左列折行，右列留在第一行。
+            // 折行预算 = 行宽 - 间距 - 右列自然宽，保证首行及每折都不超过行宽；
+            // 不能用 minOf(右列宽, share)——右列宽 > share 时会把首行挤出总宽
+            val colW = (totalWidth - g - wr).coerceAtLeast(1)
+            return wrap(left, colW).mapIndexed { i, seg ->
+                if (i == 0) seg + spaces(colW - textWidth(seg)) + spaces(g) + right
                 else seg
             }
         }
         if (rightTooLong && !leftTooLong) {
-            // 仅右列超行：右列折行且逐行靠右，左列留在第一行
-            return wrap(right, rightBudget).mapIndexed { i, seg ->
-                if (i == 0) left + spaces(g) + spaces(rightBudget - textWidth(seg)) + seg
+            // 仅右列超行：右列折行且逐行靠右，左列留在第一行（预算同理，按左列自然宽计）
+            val colW = (totalWidth - g - wl).coerceAtLeast(1)
+            return wrap(right, colW).mapIndexed { i, seg ->
+                if (i == 0) left + spaces(g) + spaces(colW - textWidth(seg)) + seg
                 else spaces(totalWidth - textWidth(seg)) + seg
             }
         }
@@ -119,8 +123,9 @@ internal object ColumnLayout {
         if (over.size == 1) {
             when (over[0]) {
                 1 -> {
-                    // 仅左列超宽：左列折行，中右列留在第一行
-                    val colW = budget1.coerceAtLeast(1)
+                    // 仅左列超宽：左列折行，中右列留在第一行。
+                    // 折行预算 = 行宽 - 2×间距 - 中右列自然宽，保证首行不超过行宽（同 renderTwo 的理由）
+                    val colW = (totalWidth - 2 * g - w2 - w3).coerceAtLeast(1)
                     return wrap(left, colW).mapIndexed { i, seg ->
                         if (i == 0) seg + spaces(colW - textWidth(seg)) + spaces(g) + middle + spaces(g) + right
                         else seg
@@ -128,7 +133,7 @@ internal object ColumnLayout {
                 }
                 2 -> {
                     // 仅中列超宽：中列折行并居中，左右列留在第一行
-                    val colW = budget2.coerceAtLeast(1)
+                    val colW = (totalWidth - 2 * g - w1 - w3).coerceAtLeast(1)
                     return wrap(middle, colW).mapIndexed { i, seg ->
                         val centered = center(seg, colW)
                         if (i == 0) left + spaces(g) + centered + spaces(g) + right
@@ -137,7 +142,7 @@ internal object ColumnLayout {
                 }
                 else -> {
                     // 仅右列超宽：右列折行并逐行靠右，左中列留在第一行
-                    val colW = budget3.coerceAtLeast(1)
+                    val colW = (totalWidth - 2 * g - w1 - w2).coerceAtLeast(1)
                     return wrap(right, colW).mapIndexed { i, seg ->
                         if (i == 0) left + spaces(g) + middle + spaces(g) + spaces(colW - textWidth(seg)) + seg
                         else spaces(totalWidth - textWidth(seg)) + seg

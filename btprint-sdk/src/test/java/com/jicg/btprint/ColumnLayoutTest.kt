@@ -136,4 +136,51 @@ class ColumnLayoutTest {
         assertEquals('一', lines[0][0])
         assertEquals('D', lines[0].trimEnd().last())
     }
+
+    // ============ 回归：单超行分支折行预算按未超行列的自然宽计算，保证每行 ≤ 行宽 ============
+
+    @Test
+    fun `两列仅左超行且右列宽超份额时首行不超行宽`() {
+        // 旧实现：预算按 minOf(右列宽, share)=9 算，首行 10+1+10=21 > 20 溢出
+        val lines = ColumnLayout.renderTwo("一二三四五六七八九", "1234567890", 20)
+        assertEquals(listOf("一二三四  1234567890", "五六七八", "九"), lines)
+        lines.forEach { assertTrue(width(it) <= 20) }
+    }
+
+    @Test
+    fun `两列仅右超行且左列宽超份额时首行不超行宽`() {
+        val lines = ColumnLayout.renderTwo("1234567890", "一二三四五六七八九", 20)
+        assertEquals(3, lines.size)
+        assertEquals("1234567890  一二三四", lines[0])
+        lines.forEach { assertTrue(width(it) <= 20) }
+        // 后续行靠右
+        assertEquals(20, width(lines[1]))
+    }
+
+    @Test
+    fun `三列仅左超行且中列宽超份额时首行不超行宽`() {
+        val lines = ColumnLayout.renderThree("一二三四五六七八九", "abcdefgh", "z", 20)
+        assertEquals(3, lines.size)
+        assertEquals("一二三四  abcdefgh z", lines[0])
+        lines.forEach { assertTrue(width(it) <= 20) }
+    }
+
+    @Test
+    fun `三列仅中超行时首行不超行宽`() {
+        val lines = ColumnLayout.renderThree("a", "一二三四五六七八九", "z", 20)
+        assertEquals(2, lines.size)
+        assertEquals("a 一二三四五六七八 z", lines[0])
+        lines.forEach { assertTrue(width(it) <= 20) }
+    }
+
+    @Test
+    fun `三列仅右超行且中列宽超份额时首行不超行宽`() {
+        // 旧实现：colW 按 budget3=11 算，首行 1+1+8+1+(11-8)+8=22 > 20 溢出
+        val lines = ColumnLayout.renderThree("1", "abcdefgh", "一二三四五六七八九", 20)
+        assertEquals(3, lines.size)
+        assertEquals("1 abcdefgh  一二三四", lines[0])
+        lines.forEach { assertTrue(width(it) <= 20) }
+        // 后续行靠右
+        assertEquals(20, width(lines[1]))
+    }
 }

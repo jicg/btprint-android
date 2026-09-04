@@ -22,17 +22,15 @@ object ImageUtils {
         require(targetWidth > 0 && targetHeight > 0) {
             "targetWidth 和 targetHeight 必须大于 0，当前: ${targetWidth}x$targetHeight"
         }
-        return try {
-            Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
-        } catch (e: Exception) {
-            Log.e(TAG, "压缩图片失败", e)
-            // 回退原图时保证像素格式可读：HARDWARE 配置的位图无法 getPixels
-            if (bitmap.config == Bitmap.Config.HARDWARE) {
-                bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
-            } else {
-                bitmap
-            }
+        // HARDWARE 配置的位图无法被 createScaledBitmap/getPixels 读取，先转为可读的 ARGB_8888
+        val source = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+        } else {
+            bitmap
         }
+        // 缩放失败（如内存不足）直接抛给调用方，打印任务整体失败；
+        // 不回退原图——原图宽度超过可打印点数会让 GS v 0 包头与数据错位，打出乱码
+        return Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true)
     }
 
     /**

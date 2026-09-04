@@ -67,7 +67,7 @@ class BleTransport(
     override var onDisconnected: (() -> Unit)? = null
 
     override val isConnected: Boolean
-        get() = ready && gatt != null
+        get() = ready && gatt != null && !closed
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -153,6 +153,14 @@ class BleTransport(
             if (g == null) {
                 connectDefer = null
                 defer.completeExceptionally(IOException("BLE 连接启动失败: connectGatt 返回 null"))
+            } else if (closed) {
+                // 连接已超时/被取消（post 延迟到超时之后）：立即释放这个野生 Gatt，
+                // 否则它永远收不到 disconnect/close，还会把 isConnected 顶成 true
+                try {
+                    g.close()
+                } catch (e: Exception) {
+                    Log.w(TAG, "关闭超时残留的 Gatt 失败", e)
+                }
             } else {
                 gatt = g
             }
