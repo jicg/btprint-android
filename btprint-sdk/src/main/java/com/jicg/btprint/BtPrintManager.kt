@@ -194,6 +194,9 @@ class BtPrintManager private constructor(private val context: Application) {
             .getString(KEY_LAST_DEVICE_TYPE, TYPE_SPP) ?: TYPE_SPP
     }
 
+    /** 上次成功连接的传输类型是否为网络打印机（TCP），供 WiFi 连接页判断是否自动重连 */
+    fun isLastTargetTcp(): Boolean = getLastDeviceType() == TYPE_TCP
+
     /**
      * 连接蓝牙设备（经典蓝牙 SPP 通道，兼容旧行为）
      * @param device 蓝牙设备
@@ -672,20 +675,25 @@ class BtPrintManager private constructor(private val context: Application) {
 
     /**
      * 打印二维码
-     * @param text 二维码内容
-     * @param width 宽度 (1-16)
-     * @param height 高度 (1-16)
+     * @param text 二维码内容（中文按 GBK 字节编码，与文本打印一致）
+     * @param width 模块尺寸 (1-16)
+     * @param height 纠错等级（48=7%, 49=15%, 50=25%, 51=30%）；
+     *   为兼容旧签名保留参数名，旧代码传的 1-16 会被钳制为合法值
      * @param align 对齐方式
      */
     suspend fun printQrCode(
         text: String,
         width: Int = 4,
-        height: Int = 4,
+        height: Int = 49,
         align: Int = ALIGN_CENTER
     ) {
         require(align in setOf(ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT)) {
             "Invalid alignment value: $align"
         }
+        // GBK 字节编码：中文内容不再被 US_ASCII 静默转成 '?'；
+        // 长度校验放在协程切换前，上限来自 pL/pH 的 16 位参数长度
+        val data = text.toByteArray(CHARSET_GBK)
+        require(data.size <= 65532) { "二维码内容过长（${data.size} 字节，最大 65532）" }
         withContext(Dispatchers.IO) {
             try {
                 ensureTransport()
@@ -693,15 +701,13 @@ class BtPrintManager private constructor(private val context: Application) {
                 // 设置对齐方式
                 write(byteArrayOf(ESC, 0x61, align.toByte()))
 
-            // 转换文本为字节数组
-            val data = text.toByteArray(Charsets.US_ASCII)
             val dataLength = data.size
 
             // 设置二维码参数
-            // 设置二维码大小
+            // 模块尺寸（fn 0x43，二维码为正方形，无"高度"概念）
             write(byteArrayOf(29, 40, 107, 3, 0, 49, 67, width.coerceIn(1, 16).toByte()))
-            // 设置二维码高度
-            write(byteArrayOf(29, 40, 107, 3, 0, 49, 69, height.coerceIn(1, 16).toByte()))
+            // 纠错等级（fn 0x45，合法值仅 48-51）
+            write(byteArrayOf(29, 40, 107, 3, 0, 49, 69, height.coerceIn(48, 51).toByte()))
 
             // 创建二维码数据命令
             // pL/pH = (dataLength + 3) 的小端拆分，必须整体计算再拆分，避免 pL 进位丢失
@@ -908,8 +914,8 @@ class BtPrintManager private constructor(private val context: Application) {
             // 目标宽度：width<=0 时取当前纸宽；钳制在可打印点数内，再按 8 点（1 字节）向上取整
             val requestedWidth = if (width <= 0) paperWidth.dotsPerLine else width
             val targetWidthPx = (requestedWidth.coerceAtMost(paperWidth.dotsPerLine) + 7) / 8 * 8
-            // 计算实际高度（保持宽高比）
-            val actualHeight = bitmap.height * targetWidthPx / bitmap.width
+            // 计算实际高度（保持宽高比）；极端宽图（如横幅长条）除法可能得 0，钳到 1 避免后续压缩参数非法
+            val actualHeight = (bitmap.height * targetWidthPx / bitmap.width).coerceAtLeast(1)
 
             // 打印前像素上限校验：抖动处理峰值内存 ≈ 12 字节/像素，超出直接拒绝（不发送任何字节），
             // 避免低端机 OOM 崩溃；提示调用方压缩图片后重打
@@ -1136,6 +1142,10 @@ class BtPrintManager private constructor(private val context: Application) {
      */
     @Volatile
     var writeTimeoutMs: Long = 10_000
+        // 0/负数会被 withTimeoutOrNull 当作立即超时，这里钳到最小 1ms 防止误配拖垮全部打印
+        set(value) {
+            field = value.coerceAtLeast(1)
+        }
 
     /**
      * 专用写入线程：阻塞式 socket 写入统一在此线程执行，超时时可连同该线程一起放弃；

@@ -112,13 +112,14 @@ class MainActivity : ComponentActivity() {
         modes.forEach { (mode, label) ->
             modeRadio.addView(RadioButton(this).apply {
                 text = label
-                id = mode.ordinal
+                // 不能用 ordinal 本身当 id：BLUETOOTH=0 与 View.NO_ID 冲突
+                id = mode.ordinal + 1
                 textSize = 14f
             })
         }
-        modeRadio.check(PrintModeStore.get(this).ordinal)
+        modeRadio.check(PrintModeStore.get(this).ordinal + 1)
         modeRadio.setOnCheckedChangeListener { _, checkedId ->
-            val mode = PrintMode.entries.firstOrNull { it.ordinal == checkedId } ?: return@setOnCheckedChangeListener
+            val mode = PrintMode.entries.firstOrNull { it.ordinal + 1 == checkedId } ?: return@setOnCheckedChangeListener
             PrintModeStore.set(this@MainActivity, mode)
             updateEntryVisibility(mode)
         }

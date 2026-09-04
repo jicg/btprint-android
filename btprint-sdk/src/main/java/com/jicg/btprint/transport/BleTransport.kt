@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
 import android.os.Handler
@@ -74,10 +75,15 @@ class BleTransport(
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 Log.i(TAG, "BLE 已连接，开始服务发现")
-                try {
+                // discoverServices 返回 false 表示启动即失败，不会有任何回调，
+                // 必须主动 fail，否则只能干等外层连接超时
+                val started = try {
                     g.discoverServices()
                 } catch (e: Exception) {
-                    fail(IOException("BLE 服务发现启动失败: ${e.message}"))
+                    false
+                }
+                if (!started) {
+                    fail(IOException("BLE 服务发现启动失败"))
                 }
             } else {
                 val wasReady = ready
@@ -204,18 +210,30 @@ class BleTransport(
                 deferred.completeExceptionally(IOException("打印机未连接"))
                 return@post
             }
-            c.value = chunk
+            val writeType = if (noResponse)
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            else BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            // API 33 起单参 writeCharacteristic 与 value 赋值整体废弃，按版本分流
+            val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // 新 API 返回 BluetoothStatusCodes 状态码（仅本分支可达，API 33+）
+                g.writeCharacteristic(c, chunk, writeType) == BluetoothStatusCodes.SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                c.setValue(chunk)
+                @Suppress("DEPRECATION")
+                g.writeCharacteristic(c)
+            }
             if (noResponse) {
                 // 无响应写拿不到单包回执，入队成功即视为成功
-                if (g.writeCharacteristic(c)) {
+                if (accepted) {
                     deferred.complete(Unit)
                 } else {
                     deferred.completeExceptionally(IOException("BLE 写入入队失败"))
                 }
             } else {
-                pendingWrite = deferred
-                if (!g.writeCharacteristic(c)) {
-                    pendingWrite = null
+                if (accepted) {
+                    pendingWrite = deferred
+                } else {
                     deferred.completeExceptionally(IOException("BLE 写入入队失败"))
                 }
             }

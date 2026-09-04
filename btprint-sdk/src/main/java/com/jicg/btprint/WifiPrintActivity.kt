@@ -121,11 +121,11 @@ class WifiPrintActivity : ComponentActivity() {
     }
 
     /**
-     * 上次连接的是网络打印机（持久化地址形如 host:port）时自动重连
+     * 上次连接的是网络打印机时自动重连（按持久化的连接类型判断，
+     * 不能看地址里有没有冒号——蓝牙 MAC 地址同样含冒号）
      */
     private fun autoConnectLastTcp() {
-        val last = btPrintManager.getLastDeviceAddress()
-        if (last.isNullOrEmpty() || !last.contains(':')) return
+        if (!btPrintManager.isLastTargetTcp()) return
         lifecycleScope.launch {
             if (btPrintManager.autoConnectLastDevice()) {
                 Toast.makeText(this@WifiPrintActivity, R.string.btp_toast_auto_connected, Toast.LENGTH_SHORT)

@@ -294,14 +294,22 @@ class BtPrintActivity : ComponentActivity() {
     }
 
     /**
+     * 读取设备名；API 31+ 上权限被撤销时 device.name 会抛 SecurityException，这里兜底未知设备
+     */
+    private fun deviceName(device: BluetoothDevice): String = try {
+        device.name?.takeIf { it.isNotBlank() } ?: getString(R.string.btp_unknown_device)
+    } catch (e: SecurityException) {
+        getString(R.string.btp_unknown_device)
+    }
+
+    /**
      * 添加一行设备卡片；地址已在其他分组时跳过（按分组去重）
      */
     private fun addDeviceRow(container: LinearLayout, device: BluetoothDevice) {
         if (device.address in deviceRows) return
 
         val row = layoutInflater.inflate(R.layout.item_device, container, false)
-        row.findViewById<TextView>(R.id.deviceName).text =
-            device.name?.takeIf { it.isNotBlank() } ?: getString(R.string.btp_unknown_device)
+        row.findViewById<TextView>(R.id.deviceName).text = deviceName(device)
 
         row.findViewById<TextView>(R.id.deviceAddress).text = device.address
 
@@ -346,7 +354,7 @@ class BtPrintActivity : ComponentActivity() {
         }
         if (address == connectingAddress) return
 
-        val name = device.name?.takeIf { it.isNotBlank() } ?: getString(R.string.btp_unknown_device)
+        val name = deviceName(device)
         updateStatus(
             getString(R.string.btp_connecting_to, name),
             device.address,
@@ -397,9 +405,15 @@ class BtPrintActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             if (btPrintManager.autoConnectLastDevice()) {
+                // address 读取同样需要 BLUETOOTH_CONNECT 权限，权限被撤销时兜底空串
+                val detail = try {
+                    btPrintManager.connectedDevice.value?.address ?: ""
+                } catch (e: SecurityException) {
+                    ""
+                }
                 updateStatus(
                     getString(R.string.btp_toast_auto_connected),
-                    btPrintManager.connectedDevice.value?.address ?: "",
+                    detail,
                     R.color.btp_success,
                     getString(R.string.btp_status_connected)
                 )

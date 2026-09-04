@@ -34,7 +34,12 @@ class TcpTransport(
         val s = Socket()
         try {
             s.connect(InetSocketAddress(host, port), connectTimeoutMs)
+            // keepAlive：对端崩溃/断网时让死连接尽快被探测到，而不是每次白等写超时
+            s.keepAlive = true
+            socket = s
+            outputStream = s.getOutputStream()
         } catch (e: IOException) {
+            // getOutputStream 也在 try 内：connect 成功但取流失败时不会泄漏 socket
             try {
                 s.close()
             } catch (closeError: Exception) {
@@ -42,8 +47,6 @@ class TcpTransport(
             }
             throw e
         }
-        socket = s
-        outputStream = s.getOutputStream()
     }
 
     override suspend fun write(data: ByteArray) {

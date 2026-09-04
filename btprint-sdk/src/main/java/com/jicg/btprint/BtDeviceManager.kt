@@ -11,11 +11,14 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 蓝牙设备管理器
@@ -39,9 +42,18 @@ class BtDeviceManager private constructor(private val context: Application) {
     private var discoveryReceiver: BroadcastReceiver? = null
     private val discoveredAddresses = HashSet<String>()
 
+    /** 扫描看门狗：部分 ROM 不及时发 ACTION_DISCOVERY_FINISHED，靠它兜底收尸 */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 扫描代际：新一轮扫描/停止会使旧看门狗失效，避免误停新扫描 */
+    private val scanGeneration = AtomicInteger(0)
+
     companion object {
         private const val TAG = "BtDeviceManager"
         private var instance: BtDeviceManager? = null
+
+        /** 扫描看门狗超时：系统扫描约 12s，超时未收到 FINISHED 广播则强制收尾 */
+        private const val SCAN_WATCHDOG_MS = 12_000L
 
         @Synchronized
         fun getInstance(context: Context): BtDeviceManager {
@@ -97,6 +109,8 @@ class BtDeviceManager private constructor(private val context: Application) {
      */
     fun getLastConnectedDevice(): BluetoothDevice? {
         val lastAddress = BtPrintManager.getInstance(context).getLastDeviceAddress() ?: return null
+        // TCP 模式的持久化地址是 host:port 不是蓝牙 MAC，无法（也不应）转为蓝牙设备
+        if (':' in lastAddress) return null
         return try {
             bluetoothAdapter?.getRemoteDevice(lastAddress)
         } catch (e: Exception) {
@@ -169,6 +183,14 @@ class BtDeviceManager private constructor(private val context: Application) {
             if (adapter.startDiscovery()) {
                 _isScanning.value = true
                 Log.i(TAG, "开始扫描设备")
+                // 看门狗：系统扫描约 12s 会发 FINISHED 广播；个别 ROM 不发，超时强制收尾，避免永久转圈耗电
+                val generation = scanGeneration.incrementAndGet()
+                mainHandler.postDelayed({
+                    if (scanGeneration.get() == generation) {
+                        Log.w(TAG, "扫描看门狗超时，强制停止扫描")
+                        stopScan()
+                    }
+                }, SCAN_WATCHDOG_MS)
                 return true
             } else {
                 Log.e(TAG, "startDiscovery 返回 false")
@@ -199,7 +221,14 @@ class BtDeviceManager private constructor(private val context: Application) {
      * 停止扫描并注销广播监听
      */
     fun stopScan() {
-        bluetoothAdapter?.takeIf { it.isDiscovering }?.cancelDiscovery()
+        // 使未触发的看门狗失效，避免它停掉下一轮扫描
+        scanGeneration.incrementAndGet()
+        try {
+            bluetoothAdapter?.takeIf { it.isDiscovering }?.cancelDiscovery()
+        } catch (e: SecurityException) {
+            // API 31+ 权限被撤销时 cancelDiscovery 抛 SecurityException（receiver 回调路径同样会走到这里）
+            Log.w(TAG, "取消扫描失败: 缺少蓝牙权限", e)
+        }
         discoveryReceiver?.let {
             try {
                 context.unregisterReceiver(it)

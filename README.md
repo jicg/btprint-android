@@ -9,11 +9,11 @@
 - **纸张宽度**：支持 58mm（32 字符/行）与 80mm（48 字符/行）小票机，可切换并持久化
 - **文本打印**：支持字号（小/中/大）、对齐方式（左/中/右）、多行换行
 - **排版打印**：两列 / 三列排版、分割线、标题（行宽随纸张与字号自动换算）；多列超宽可选表格模式（列内折行、多列均分空间）
-- **二维码打印**：支持自定义大小与对齐（内容限 ASCII，中文会变 `?`）
-- **条形码打印**：支持 CODE128、EAN13、EAN8、UPC-A、UPC-E、CODE39、ITF、ONE_CODE93、CODABAR 共 9 种类型
-- **图片打印**：自动压缩 + Floyd-Steinberg 抖动点阵算法
+- **二维码打印**：支持自定义模块尺寸、纠错等级与对齐，内容按 GBK 字节编码（中文可正常扫码）
+- **条形码打印**：支持 CODE128、EAN13、EAN8、UPC-A、UPC-E、CODE39、ITF、ONE_CODE93、CODABAR 共 9 种类型，按类型校验内容格式
+- **图片打印**：自动压缩 + Floyd-Steinberg 抖动点阵算法，超过 200 万像素拒绝打印并提示压缩
 - **硬件指令**：切纸（全切/半切）、开钱箱
-- **设备管理**：已配对设备列表、连接入口 UI（`BtPrintActivity`，可选集成）
+- **设备管理**：已配对设备列表、连接入口 UI（`BtPrintActivity` 蓝牙页 / `WifiPrintActivity` WiFi 页，可选集成）；局域网打印机扫描（`LanPrinterScanner`）
 
 
 
@@ -49,6 +49,7 @@ SDK 已在自身 `AndroidManifest.xml` 声明以下权限，manifest 合并时�
 - `BLUETOOTH`、`BLUETOOTH_ADMIN`（Android 11 及以下）
 - `BLUETOOTH_SCAN`（`neverForLocation`）、`BLUETOOTH_CONNECT`（Android 12+）
 - `ACCESS_FINE_LOCATION`、`ACCESS_COARSE_LOCATION`（低版本扫描兼容）
+- `INTERNET`、`ACCESS_NETWORK_STATE`（Wi-Fi/以太网打印与局域网扫描）
 
 **运行时权限**：Android 12+ 需要宿主在跳转 `BtPrintActivity` 或调用连接 API 前申请 `BLUETOOTH_SCAN` / `BLUETOOTH_CONNECT`；`BtPrintActivity` 内置了权限申请逻辑，直接使用即可。
 
@@ -90,6 +91,9 @@ PrintUtils.connectBleWait(device)
 // 方式五：连接网络打印机（Wi-Fi / 以太网，ESC/POS over TCP）
 PrintUtils.connectTcpWait("192.168.1.100")            // 默认端口 9100
 PrintUtils.connectTcpWait("192.168.1.100", 9100)
+
+// 方式六：跳转 SDK 内置的 WiFi 连接页（手动输入 IP 或一键扫描局域网打印机）
+startActivity(Intent(this, WifiPrintActivity::class.java))
 ```
 
 当前连接目标（设备或网络地址）可通过 `PrintUtils.connectionTarget` 观察。
@@ -132,6 +136,7 @@ PrintUtils.setPrintResultListener { result ->
 }
 
 PrintUtils.queueSize.collect { size -> /* 队列中待执行任务数 */ }
+PrintUtils.setMaxQueueSize(200) // 队列容量上限（默认 100），满员后入队任务丢弃并回调失败
 PrintUtils.clearQueue()        // 清空未执行任务；中断进行中的打印用 clearQueue() + disconnect()
 PrintUtils.cancelPrint(job)    // 仅对尚未出队的任务有效
 ```
@@ -175,8 +180,8 @@ PrintUtils.disconnect()
 
 ## 注意事项
 
-- SDK 使用 GBK 编码发送文本，适配国内主流 58mm / 80mm 热敏打印机（`setPaperWidth` 切换）
-- 二维码内容使用 US-ASCII 编码，仅支持英文/数字/符号，含中文会打印为 `?`
+- SDK 使用 GBK 编码发送文本与二维码内容，适配国内主流 58mm / 80mm 热敏打印机（`setPaperWidth` 切换）
+- 连接超时（`BtPrintManager.connectTimeoutMs`，默认 20s）与写入超时（`writeTimeoutMs`，默认 10s）可按业务调整；图片打印超过 200 万像素会拒绝打印并提示压缩（`BtPrintManager.MAX_PRINT_PIXELS`）
 - 图片打印建议使用黑白或高对比度图片，效果最佳
 - 各排版方法内部显式管理对齐方式，任务结束后恢复左对齐，连续调用不会因对齐状态残留而错位
 - BLE 通道按 MTU 分包写入（默认 20 字节，协商后最大 509），大图打印比 SPP 慢属正常现象；
