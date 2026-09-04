@@ -2,6 +2,10 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
+rem ============ 0. Fix JDK ============
+rem AGP 8.x 需要 JDK 17+；优先使用本机统一安装的 JDK，避免吃到 PATH 里的旧 Java 8
+if exist "C:\app\jdk\bin\java.exe" set "JAVA_HOME=C:\app\jdk"
+
 echo ==========================================================
 echo   btprint-sdk - Build Maven Central deployment bundle
 echo   (manual upload mode)
